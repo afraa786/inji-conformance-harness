@@ -1,331 +1,279 @@
 #!/usr/bin/env python3
-"""Run OpenID conformance plan modules and write normalized results."""
-
+"""Drive OIDF plans. Exit 0: expected; 1: test failure; 2: configuration/API failure."""
 from __future__ import annotations
-
 import argparse
+import io
 import json
+import math
+import os
+from pathlib import Path
 import sys
 import time
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
-from urllib.parse import urljoin
-
+from urllib.parse import urlsplit, urlunsplit, quote
+import zipfile
 import requests
 
+try:
+    from .render_plans import render_plan
+except ImportError:
+    from render_plans import render_plan
 
-DEFAULT_SUITE_URL = "https://localhost:8443"
-POLL_INTERVAL_SECONDS = 3
-REQUEST_TIMEOUT_SECONDS = 30
-EXPECTED_STATUSES = {
-    "PASSED",
-    "FAILED",
-    "SKIPPED",
-    "WARNING",
-    "EXPECTED_FAILURE",
-    "EXPECTED_SKIP",
-}
+FAILURES = {"FAILED", "INTERRUPTED"}
+STATUSES = {"PASSED", "FAILED", "WARNING", "SKIPPED", "INTERRUPTED", "REVIEW", "EXPECTED_FAILURE", "EXPECTED_SKIP"}
 
 
 class RunnerError(Exception):
-    """An actionable configuration or conformance API error."""
+    """Sanitized configuration/infrastructure error; never include HTTP bodies."""
 
 
-def log(message: str) -> None:
-    timestamp = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
-    print(f"[{timestamp}] {message}", flush=True)
+def write_results(path, value):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run an OpenID Foundation conformance plan."
-    )
-    parser.add_argument("--component", choices=("certify", "verify"), required=True)
-    parser.add_argument("--target", required=True, help="Base URL of the Inji service")
-    parser.add_argument("--out", required=True, help="Path for the results JSON")
-    parser.add_argument("--suite-url", default=DEFAULT_SUITE_URL)
-    parser.add_argument("--expected-failures", help="JSON list of expected module outcomes")
-    parser.add_argument("--timeout-minutes", type=float, default=60)
-    return parser.parse_args()
-
-
-def load_plan(component: str, target: str, suite_url: str) -> dict[str, Any]:
-    template_path = Path("configs") / f"{'issuer' if component == 'certify' else 'verifier'}-plan.json.tpl"
-    if not template_path.is_file():
-        raise RunnerError(f"Plan template not found: {template_path}")
-
-    try:
-        template_text = template_path.read_text(encoding="utf-8")
-        rendered = template_text.replace("{{TARGET}}", target).replace(
-            "{{SUITE_URL}}", suite_url
-        )
-        plan = json.loads(rendered)
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise RunnerError(f"Could not load plan template: {template_path}") from error
-
-    if not isinstance(plan, dict):
-        raise RunnerError("Plan template must contain a JSON object")
-    for key in ("planName", "variant"):
-        if not isinstance(plan.get(key), str) or not plan[key]:
-            raise RunnerError(f"Plan template is missing a non-empty {key}")
-    if "config" not in plan:
-        raise RunnerError("Plan template is missing config")
-    if not isinstance(plan["config"], dict):
-        raise RunnerError("Plan template config must be a JSON object")
-    if "_comment" in plan:
-        del plan["_comment"]
-    if "{{TARGET}}" in json.dumps(plan) or "{{SUITE_URL}}" in json.dumps(plan):
-        raise RunnerError("Plan template contains an unresolved URL placeholder")
-    return plan
-
-
-def load_expected_failures(path: str | None) -> dict[str, str]:
-    if path is None:
+def load_expected_failures(path):
+    if not path:
         return {}
     try:
         entries = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise RunnerError(f"Could not load expected-failures file: {path}") from error
-    if not isinstance(entries, list):
-        raise RunnerError("Expected-failures file must contain a JSON list")
-
-    expected: dict[str, str] = {}
-    for entry in entries:
-        if (
-            not isinstance(entry, dict)
-            or not isinstance(entry.get("module"), str)
-            or not isinstance(entry.get("reason"), str)
-        ):
-            raise RunnerError(
-                "Each expected-failures entry must have string module and reason fields"
-            )
-        expected[entry["module"]] = entry["reason"]
-    return expected
+        if not isinstance(entries, list):
+            raise ValueError()
+        result = {}
+        for entry in entries:
+            if not isinstance(entry, dict) or any(not isinstance(entry.get(k), str) or not entry[k].strip()
+                                                  for k in ("module", "reason")):
+                raise ValueError()
+            if entry["module"] in result:
+                raise ValueError()
+            result[entry["module"]] = entry["reason"]
+        return result
+    except (OSError, ValueError, TypeError) as error:
+        raise RunnerError("Expected-failures must contain unique module/reason objects") from error
 
 
-def suite_url(base_url: str, endpoint: str) -> str:
-    return urljoin(base_url.rstrip("/") + "/", endpoint.lstrip("/"))
+class SuiteAPI:
+    """Keep suite bearer token and TLS bypass on the configured suite origin only."""
+    def __init__(self, base_url, deadline):
+        self.base = base_url.rstrip("/")
+        parsed = urlsplit(self.base)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.query or parsed.fragment:
+            raise RunnerError("Invalid suite URL")
+        self.origin = (parsed.scheme, parsed.netloc)
+        public = urlsplit(os.environ.get("SUITE_PUBLIC_URL", "https://localhost.emobix.co.uk:8443"))
+        self.public_origin = (public.scheme, public.netloc)
+        self.deadline = deadline
+        self.session = requests.Session()
+        # Local self-signed suite only: .env.example exposes this development flag.
+        # All Inji requests use separate sessions with normal TLS verification.
+        flag = os.environ.get("OIDC_SUITE_INSECURE", "true").lower()
+        if flag not in {"true", "false"}:
+            raise RunnerError("OIDC_SUITE_INSECURE must be true or false")
+        self.session.verify = flag != "true"
+        self.session.headers.update({"Accept": "application/json"})
+        if os.environ.get("OIDC_SUITE_TOKEN"):
+            self.session.headers["Authorization"] = "Bearer " + os.environ["OIDC_SUITE_TOKEN"]
+
+    def local_url(self, path):
+        parsed = urlsplit(path)
+        if parsed.netloc:
+            if (parsed.scheme, parsed.netloc) not in {self.origin, self.public_origin}:
+                raise RunnerError("Refusing suite credentials/TLS bypass for another origin")
+            return self.base + urlunsplit(("", "", parsed.path, parsed.query, ""))
+        if not path.startswith("/") or path.startswith("//"):
+            raise RunnerError("Invalid suite endpoint")
+        return self.base + path
+
+    def request(self, method, path, *, expected=200, decode=True, **kwargs):
+        url = self.local_url(path)
+        for attempt in range(3):
+            remaining = self.deadline - time.monotonic()
+            if remaining <= 0:
+                raise RunnerError("Global/module API deadline exceeded")
+            try:
+                response = self.session.request(method, url, timeout=min(30, remaining),
+                                                allow_redirects=False, **kwargs)
+                if response.status_code != expected:
+                    raise RunnerError(f"Suite {method} returned HTTP {response.status_code}")
+                return response.json() if decode else response
+            except requests.exceptions.SSLError as error:
+                raise RunnerError("Suite TLS validation failed; check CA or OIDC_SUITE_INSECURE") from error
+            except (requests.ConnectionError, requests.Timeout) as error:
+                if attempt == 2:
+                    raise RunnerError("Suite connection failed after 3 attempts") from error
+                time.sleep(min(2 ** attempt, max(0, self.deadline - time.monotonic())))
+            except (ValueError, requests.RequestException) as error:
+                raise RunnerError("Invalid suite response/request") from error
 
 
-def get_json(session: requests.Session, url: str) -> Any:
-    last_error: requests.RequestException | None = None
-    for attempt in range(3):
-        try:
-            response = session.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
-            response.raise_for_status()
-            return response.json()
-        except (requests.ConnectionError, requests.Timeout) as error:
-            last_error = error
-            if attempt < 2:
-                time.sleep(attempt + 1)
-        except requests.HTTPError as error:
-            raise RunnerError(f"Conformance API GET returned HTTP {error.response.status_code}") from error
-        except ValueError as error:
-            raise RunnerError("Conformance API returned invalid JSON") from error
-    raise RunnerError("Could not connect to the conformance API after 3 attempts") from last_error
+def module_name(module):
+    name = module if isinstance(module, str) else module.get("testModule") if isinstance(module, dict) else None
+    if not isinstance(name, str) or not name:
+        raise RunnerError("Suite module is missing testModule")
+    return name
 
 
-def post_json(session: requests.Session, url: str, payload: dict[str, Any]) -> Any:
-    try:
-        response = session.post(url, json=payload, timeout=REQUEST_TIMEOUT_SECONDS)
-        response.raise_for_status()
-        return response.json()
-    except requests.HTTPError as error:
-        raise RunnerError(
-            f"Conformance API POST returned HTTP {error.response.status_code}"
-        ) from error
-    except (requests.ConnectionError, requests.Timeout) as error:
-        raise RunnerError("Could not connect to the conformance API") from error
-    except ValueError as error:
-        raise RunnerError("Conformance API returned invalid JSON") from error
+def result_status(info):
+    if info.get("status") == "INTERRUPTED":
+        return "INTERRUPTED", "Suite interrupted this module"
+    raw = info.get("result")
+    if isinstance(raw, dict):
+        raw = raw.get("result", raw.get("status"))
+    status = str(raw).upper()
+    status = {"PASS": "PASSED", "FAILURE": "FAILED", "FAIL": "FAILED", "SKIP": "SKIPPED"}.get(status, status)
+    if status not in STATUSES - {"EXPECTED_FAILURE", "EXPECTED_SKIP"}:
+        return "FAILED", "Suite did not provide a recognized terminal result"
+    return status, "Suite terminal result: " + status
 
 
-def response_id(response: Any, description: str) -> str:
-    if isinstance(response, dict):
-        value = response.get("id", response.get("planId"))
-        if value is not None and str(value):
-            return str(value)
-    raise RunnerError(f"Conformance API did not return an ID for {description}")
-
-
-def plan_modules(response: Any) -> list[Any]:
-    if not isinstance(response, dict):
-        raise RunnerError("Conformance API returned an invalid plan response")
-    modules = response.get("modules")
-    if modules is None and isinstance(response.get("plan"), dict):
-        modules = response["plan"].get("modules")
-    if not isinstance(modules, list):
-        raise RunnerError("Conformance API plan response did not include a module list")
-    return modules
-
-
-def module_name(module: Any) -> str:
-    if isinstance(module, str) and module:
-        return module
-    if isinstance(module, dict):
-        for key in ("name", "module", "test"):
-            value = module.get(key)
-            if isinstance(value, str) and value:
-                return value
-    raise RunnerError("Conformance API returned a module without a name")
-
-
-def result_status(result: Any, terminal_status: str) -> tuple[str, str]:
-    if isinstance(result, dict):
-        nested_result = result.get("result")
-        if isinstance(nested_result, dict):
-            result = nested_result
-
-        raw_status = result.get("status") or result.get("outcome") or result.get("result")
-        detail = result.get("detail") or result.get("message") or result.get("description")
-        if isinstance(raw_status, str):
-            normalized = raw_status.strip().upper().replace(" ", "_")
-            aliases = {
-                "PASS": "PASSED",
-                "SUCCESS": "PASSED",
-                "FAIL": "FAILED",
-                "ERROR": "FAILED",
-                "SKIP": "SKIPPED",
-            }
-            status = aliases.get(normalized, normalized)
-            if status in EXPECTED_STATUSES:
-                return status, str(detail or "")
-        if terminal_status == "INTERRUPTED":
-            return "FAILED", str(detail or "Runner was interrupted")
-        return "FAILED", str(detail or "Conformance module did not report a recognized result")
-    if terminal_status == "INTERRUPTED":
-        return "FAILED", "Runner was interrupted"
-    return "FAILED", "Conformance API returned an invalid module result"
-
-
-def run_module(
-    session: requests.Session,
-    base_url: str,
-    plan_id: str,
-    name: str,
-    deadline: float,
-) -> tuple[str, str]:
-    runner_response = post_json(
-        session,
-        suite_url(base_url, "/api/runner"),
-        {"plan": plan_id, "module": name},
-    )
-    runner_id = response_id(runner_response, f"runner for {name}")
-    log(f"Started module {name}")
-
-    while True:
-        if time.monotonic() >= deadline:
-            raise RunnerError(f"Timed out waiting for module {name}")
-        info = get_json(session, suite_url(base_url, f"/api/info/{runner_id}"))
-        if not isinstance(info, dict) or not isinstance(info.get("status"), str):
-            raise RunnerError(f"Conformance API returned invalid status for module {name}")
-        state = info["status"].upper()
-        if state in ("FINISHED", "INTERRUPTED"):
-            break
-        time.sleep(min(POLL_INTERVAL_SECONDS, max(0, deadline - time.monotonic())))
-
-    result = info.get("result")
-    if result is None:
-        result = get_json(session, suite_url(base_url, f"/api/results/{runner_id}"))
-    status, detail = result_status(result, state)
-    log(f"Completed module {name}: {status}")
+def apply_expected_outcome(name, status, detail, expected):
+    if name in expected:
+        if status in FAILURES:
+            return "EXPECTED_FAILURE", "Expected failure: " + expected[name]
+        if status == "SKIPPED":
+            return "EXPECTED_SKIP", expected[name]
+        if status == "PASSED":
+            detail += "; unexpectedly passing, remove from expected-failures list"
     return status, detail
 
 
-def apply_expected_outcome(
-    name: str, status: str, detail: str, expected: dict[str, str]
-) -> tuple[str, str]:
-    if name not in expected:
-        return status, detail
-    reason = expected[name]
-    if status == "FAILED":
-        return "EXPECTED_FAILURE", reason
-    if status == "SKIPPED":
-        return "EXPECTED_SKIP", reason
-    return status, detail
-
-
-def write_results(path: str, results: dict[str, Any]) -> None:
-    output_path = Path(path)
+def run_module(api, plan_id, module, handoff, args, output_dir):
+    name, start = module_name(module), time.monotonic()
+    global_deadline = api.deadline
+    api.deadline = min(global_deadline, start + args.module_timeout_seconds)
+    record = dict(name=name, status="FAILED", detail="Module did not complete", logUrl="", duration=0,
+                  variant=module.get("variant", {}) if isinstance(module, dict) else {})
     try:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(
-            json.dumps(results, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
-    except OSError as error:
-        raise RunnerError(f"Could not write results file: {path}") from error
-
-
-def main() -> int:
-    args = parse_args()
-    if args.timeout_minutes <= 0:
-        log("Configuration error: --timeout-minutes must be greater than zero")
-        return 2
-
-    try:
-        plan = load_plan(args.component, args.target, args.suite_url)
-        expected = load_expected_failures(args.expected_failures)
-    except RunnerError as error:
-        log(f"Configuration error: {error}")
-        return 2
-
-    base_url = args.suite_url.rstrip("/")
-    session = requests.Session()
-    session.verify = False
-    session.headers.update({"Accept": "application/json"})
-
-    try:
-        plan_response = post_json(
-            session,
-            suite_url(base_url, "/api/plan"),
-            {
-                "planName": plan["planName"],
-                "variant": plan["variant"],
-                "config": plan["config"],
-            },
-        )
-        plan_id = response_id(plan_response, "plan")
-        modules = plan_modules(plan_response)
-        log(f"Created conformance plan {plan_id} with {len(modules)} modules")
-
-        deadline = time.monotonic() + args.timeout_minutes * 60
-        module_results: list[dict[str, str]] = []
-        for module in modules:
-            name = module_name(module)
-            status, detail = run_module(
-                session, base_url, plan_id, name, deadline
-            )
-            status, detail = apply_expected_outcome(name, status, detail, expected)
-            module_results.append({"name": name, "status": status, "detail": detail})
-
-        summary = {
-            "passed": sum(item["status"] == "PASSED" for item in module_results),
-            "failed": sum(item["status"] == "FAILED" for item in module_results),
-            "skipped": sum(
-                item["status"] in ("SKIPPED", "EXPECTED_SKIP") for item in module_results
-            ),
-            "warning": sum(item["status"] == "WARNING" for item in module_results),
-        }
-        output = {
-            "component": args.component,
-            "planId": plan_id,
-            "summary": summary,
-            "modules": module_results,
-        }
-        write_results(args.out, output)
-    except RunnerError as error:
-        log(f"Conformance run error: {error}")
-        return 2
+        params = {"test": name, "plan": plan_id}
+        if record["variant"]:
+            params["variant"] = json.dumps(record["variant"])
+        created = api.request("POST", "/api/runner", params=params, expected=201)
+        runner_id = created.get("id")
+        if not isinstance(runner_id, str) or not runner_id:
+            raise RunnerError("Suite did not return a runner ID")
+        rid = quote(runner_id, safe="")
+        record["logUrl"] = api.base + "/log-detail.html?log=" + rid
+        info = api.request("GET", "/api/info/" + rid)
+        if info.get("status") == "CONFIGURED":
+            api.request("POST", "/api/runner/" + rid)
+        waiting_since, last_state, context = None, info.get("status"), {}
+        handoff.deadline = api.deadline
+        while True:
+            if time.monotonic() >= api.deadline:
+                record["detail"] = "Module/global timeout; last state: " + str(last_state)
+                break
+            info = api.request("GET", "/api/info/" + rid)
+            last_state = info.get("status")
+            if last_state in {"FINISHED", "INTERRUPTED"}:
+                record["status"], record["detail"] = result_status(info)
+                handoff.finish(context, name)
+                break
+            if last_state == "WAITING":
+                waiting_since = waiting_since if waiting_since is not None else time.monotonic()
+                if time.monotonic() - waiting_since >= args.waiting_timeout_seconds:
+                    record["detail"] = "WAITING timeout: browser/wallet action was not completed"
+                    break
+                if handoff.drive(api, info, context):
+                    waiting_since = time.monotonic()
+            else:
+                waiting_since = None
+            time.sleep(min(args.poll_interval, max(0, api.deadline - time.monotonic())))
     finally:
-        session.close()
+        api.deadline = global_deadline
+        record["duration"] = round(time.monotonic() - start, 3)
+    evidence = api.request("GET", "/api/log/" + rid)
+    write_results(output_dir / (rid + "-log.json"), evidence)
+    return record
 
-    log(
-        "Summary: "
-        f"passed={summary['passed']} failed={summary['failed']} "
-        f"skipped={summary['skipped']} warning={summary['warning']}"
-    )
-    return 1 if summary["failed"] else 0
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--component", choices=("certify", "verify"), required=True)
+    parser.add_argument("--target", required=True)
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--suite-url", default=os.environ.get("SUITE_URL", "https://localhost:8443"))
+    parser.add_argument("--plan", help="Rendered JSON; otherwise render from environment")
+    parser.add_argument("--expected-failures")
+    parser.add_argument("--timeout-minutes", type=float, default=60)
+    parser.add_argument("--module-timeout-seconds", type=float, default=600)
+    parser.add_argument("--waiting-timeout-seconds", type=float, default=120)
+    parser.add_argument("--poll-interval", type=float, default=3)
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    output = dict(component=args.component, planId=None, modules=[], summary={}, errors=[])
+    api, exit_code = None, 2
+    try:
+        if any(not math.isfinite(v) or v <= 0 for v in (args.timeout_minutes, args.module_timeout_seconds,
+                                                       args.waiting_timeout_seconds, args.poll_interval)):
+            raise RunnerError("Timeouts/poll interval must be positive finite numbers")
+        plan = (json.loads(Path(args.plan).read_text(encoding="utf-8")) if args.plan else
+                render_plan(args.component, args.target, args.suite_url))
+        if not isinstance(plan.get("variant"), dict) or not isinstance(plan.get("config"), dict):
+            raise RunnerError("Rendered plan requires variant/config objects")
+        if "{{" in json.dumps(plan):
+            raise RunnerError("Unresolved plan placeholders")
+        expected = load_expected_failures(args.expected_failures)
+        try:
+            from .handoff_certify import CertifyHandoff
+            from .handoff_verify import VerifyHandoff
+        except ImportError:
+            from handoff_certify import CertifyHandoff
+            from handoff_verify import VerifyHandoff
+        handoff = (CertifyHandoff if args.component == "certify" else VerifyHandoff)(args.target, plan)
+        api = SuiteAPI(args.suite_url, time.monotonic() + args.timeout_minutes * 60)
+        created = api.request("POST", "/api/plan", expected=201,
+                              params={"planName": plan["planName"], "variant": json.dumps(plan["variant"])},
+                              json=plan["config"])
+        plan_id = created.get("id")
+        if not isinstance(plan_id, str) or not plan_id:
+            raise RunnerError("Suite did not return a plan ID")
+        output["planId"] = plan_id
+        plan_info = api.request("GET", "/api/plan/" + quote(plan_id, safe=""))
+        modules = plan_info.get("modules", created.get("modules"))
+        if not isinstance(modules, list) or not modules:
+            raise RunnerError("Suite plan has no modules")
+        evidence_dir = Path(args.out).parent / (args.component + "-evidence")
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        for module in modules:
+            try:
+                record = run_module(api, plan_id, module, handoff, args, evidence_dir)
+            except RunnerError as error:
+                output["modules"].append(dict(name=module_name(module), status="FAILED", detail=str(error),
+                                               logUrl="", duration=0, infrastructureError=True))
+                raise
+            record["status"], record["detail"] = apply_expected_outcome(record["name"], record["status"], record["detail"], expected)
+            output["modules"].append(record)
+            print(f"{args.component}: {record['name']}: {record['status']}", flush=True)
+        exported = api.request("GET", "/api/plan/export/" + quote(plan_id, safe=""), decode=False)
+        try:
+            with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+                if archive.testzip():
+                    raise ValueError()
+        except (zipfile.BadZipFile, ValueError) as error:
+            raise RunnerError("Suite export was not a valid ZIP") from error
+        (evidence_dir / "plan-export.zip").write_bytes(exported.content)
+        exit_code = int(any(m["status"] in FAILURES for m in output["modules"]))
+    except (RunnerError, OSError, ValueError, KeyError, TypeError) as error:
+        message = str(error) if isinstance(error, RunnerError) else "Invalid or missing configuration/results"
+        output["errors"].append(message)
+        print("Conformance error: " + message, file=sys.stderr)
+        exit_code = 2
+    finally:
+        if api:
+            api.session.close()
+        output["summary"] = {s.lower(): sum(m["status"] == s for m in output["modules"]) for s in sorted(STATUSES)}
+        output["exitCode"] = exit_code
+        try:
+            write_results(args.out, output)
+        except OSError:
+            print("Could not write results", file=sys.stderr)
+            exit_code = 2
+    return exit_code
 
 
 if __name__ == "__main__":
