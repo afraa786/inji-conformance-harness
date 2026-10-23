@@ -15,6 +15,9 @@ except ImportError:
 
 
 class VerifyHandoff:
+    # TODO(verify): port this reference checkout's legacy /vp-request handoff to
+    # the alpha's /v2 DCQL APIs using its tagged DTOs. Do not retry a rejected
+    # alpha request against legacy endpoints or report it as a successful test.
     def __init__(self, target, plan):
         self.target = os.environ.get("VERIFY_API_URL", target).rstrip("/")
         self.plan = plan

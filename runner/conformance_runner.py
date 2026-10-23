@@ -14,10 +14,10 @@ import zipfile
 import requests
 
 try:
-    from .render_plans import render_plan
+    from .render_plans import render_plan, read_env
     from .common import RunnerError, HandoffFailure
 except ImportError:
-    from render_plans import render_plan
+    from render_plans import render_plan, read_env
     from common import RunnerError, HandoffFailure
 
 FAILURES = {"FAILED", "INTERRUPTED"}
@@ -70,7 +70,8 @@ class SuiteAPI:
         if flag not in {"true", "false"}:
             raise RunnerError("OIDC_SUITE_INSECURE must be true or false")
         self.session.verify = flag != "true"
-        self.session.headers.update({"Accept": "application/json"})
+        # conformance.py sends this even for a bodyless create-from-plan POST.
+        self.session.headers.update({"Accept": "application/json", "Content-Type": "application/json"})
         if os.environ.get("OIDC_SUITE_TOKEN"):
             self.session.headers["Authorization"] = "Bearer " + os.environ["OIDC_SUITE_TOKEN"]
 
@@ -95,7 +96,12 @@ class SuiteAPI:
                                                 allow_redirects=False, **kwargs)
                 if response.status_code != expected:
                     raise RunnerError(f"Suite {method} returned HTTP {response.status_code}")
-                return response.json() if decode else response
+                if not decode:
+                    return response
+                value = response.json()
+                if not isinstance(value, (dict, list)):
+                    raise RunnerError("Suite returned an invalid JSON structure")
+                return value
             except requests.exceptions.SSLError as error:
                 raise RunnerError("Suite TLS validation failed; check CA or OIDC_SUITE_INSECURE") from error
             except (requests.ConnectionError, requests.Timeout) as error:
@@ -143,27 +149,32 @@ def run_module(api, plan_id, module, handoff, args, output_dir):
     api.deadline = min(global_deadline, start + args.module_timeout_seconds)
     record = dict(name=name, status="FAILED", detail="Module did not complete", logUrl="", duration=0,
                   variant=module.get("variant", {}) if isinstance(module, dict) else {})
+    rid, context, failure, timed_out = None, {}, None, False
     try:
         params = {"test": name, "plan": plan_id}
         if record["variant"]:
             params["variant"] = json.dumps(record["variant"])
         created = api.request("POST", "/api/runner", params=params, expected=201)
-        runner_id = created.get("id")
+        runner_id = created.get("id") if isinstance(created, dict) else None
         if not isinstance(runner_id, str) or not runner_id:
             raise RunnerError("Suite did not return a runner ID")
         rid = quote(runner_id, safe="")
         record["logUrl"] = api.base + "/log-detail.html?log=" + rid
-        info = api.request("GET", "/api/info/" + rid)
-        if info.get("status") == "CONFIGURED":
-            api.request("POST", "/api/runner/" + rid)
-        waiting_since, last_state, context = None, info.get("status"), {}
+        waiting_since, last_state, started = None, "CREATED", False
         handoff.deadline = api.deadline
         while True:
             if time.monotonic() >= api.deadline:
                 record["detail"] = "Module/global timeout; last state: " + str(last_state)
+                timed_out = True
                 break
             info = api.request("GET", "/api/info/" + rid)
+            if not isinstance(info, dict) or not isinstance(info.get("status"), str):
+                raise RunnerError("Suite returned invalid module status")
             last_state = info.get("status")
+            # Configuration happens asynchronously; CONFIGURED may arrive on a later poll.
+            if last_state == "CONFIGURED" and not started:
+                api.request("POST", "/api/runner/" + rid)
+                started = True
             if last_state in {"FINISHED", "INTERRUPTED"}:
                 record["status"], record["detail"] = result_status(info)
                 handoff.finish(context, name)
@@ -172,8 +183,13 @@ def run_module(api, plan_id, module, handoff, args, output_dir):
                 waiting_since = waiting_since if waiting_since is not None else time.monotonic()
                 if time.monotonic() - waiting_since >= args.waiting_timeout_seconds:
                     record["detail"] = "WAITING timeout: browser/wallet action was not completed"
+                    timed_out = True
                     break
-                if handoff.drive(api, info, context):
+                # /api/info is persisted; live browser/exposed values come from /api/runner.
+                live = api.request("GET", "/api/runner/" + rid)
+                if not isinstance(live, dict):
+                    raise RunnerError("Suite returned invalid live runner information")
+                if handoff.drive(api, live, context):
                     waiting_since = time.monotonic()
             else:
                 waiting_since = None
@@ -181,13 +197,27 @@ def run_module(api, plan_id, module, handoff, args, output_dir):
             time.sleep(min(args.poll_interval, max(0, api.deadline - time.monotonic())))
     except HandoffFailure as error:
         record["status"], record["detail"] = "FAILED", str(error)
+    except RunnerError as error:
+        failure = error
+        record.update(status="FAILED", detail=str(error), infrastructureError=True)
     finally:
         api.deadline = global_deadline
         record["duration"] = round(time.monotonic() - start, 3)
     if context.get("verifyOutcome"):
         record["verifyOutcome"] = context["verifyOutcome"]
-    evidence = api.request("GET", "/api/log/" + rid)
-    write_results(output_dir / (rid + "-log.json"), evidence)
+    try:
+        if rid:
+            if timed_out:
+                # Stop abandoned tests before reusing the same alias for another module.
+                api.request("DELETE", "/api/runner/" + rid)
+            evidence = api.request("GET", "/api/log/" + rid)
+            write_results(output_dir / (rid + "-log.json"), evidence)
+    except RunnerError as error:
+        failure = failure or error
+        record["infrastructureError"] = True
+    if failure:
+        failure.record = record
+        raise failure
     return record
 
 
@@ -196,7 +226,7 @@ def parse_args(argv=None):
     parser.add_argument("--component", choices=("certify", "verify"), required=True)
     parser.add_argument("--target", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--suite-url", default=os.environ.get("SUITE_URL", "https://localhost:8443"))
+    parser.add_argument("--suite-url", help="Defaults to SUITE_URL or https://localhost:8443")
     parser.add_argument("--plan", help="Rendered JSON; otherwise render from environment")
     parser.add_argument("--expected-failures")
     parser.add_argument("--timeout-minutes", type=float, default=60)
@@ -211,12 +241,15 @@ def main(argv=None):
     output = dict(component=args.component, planId=None, modules=[], summary={}, errors=[])
     api, exit_code = None, 2
     try:
+        read_env()
+        args.suite_url = args.suite_url or os.environ.get("SUITE_URL", "https://localhost:8443")
         if any(not math.isfinite(v) or v <= 0 for v in (args.timeout_minutes, args.module_timeout_seconds,
                                                        args.waiting_timeout_seconds, args.poll_interval)):
             raise RunnerError("Timeouts/poll interval must be positive finite numbers")
         plan = (json.loads(Path(args.plan).read_text(encoding="utf-8")) if args.plan else
                 render_plan(args.component, args.target, args.suite_url))
-        if not isinstance(plan.get("variant"), dict) or not isinstance(plan.get("config"), dict):
+        if (not isinstance(plan, dict) or not isinstance(plan.get("planName"), str) or not plan["planName"]
+                or not isinstance(plan.get("variant"), dict) or not isinstance(plan.get("config"), dict)):
             raise RunnerError("Rendered plan requires variant/config objects")
         if "{{" in json.dumps(plan):
             raise RunnerError("Unresolved plan placeholders")
@@ -232,11 +265,13 @@ def main(argv=None):
         created = api.request("POST", "/api/plan", expected=201,
                               params={"planName": plan["planName"], "variant": json.dumps(plan["variant"])},
                               json=plan["config"])
-        plan_id = created.get("id")
+        plan_id = created.get("id") if isinstance(created, dict) else None
         if not isinstance(plan_id, str) or not plan_id:
             raise RunnerError("Suite did not return a plan ID")
         output["planId"] = plan_id
         plan_info = api.request("GET", "/api/plan/" + quote(plan_id, safe=""))
+        if not isinstance(plan_info, dict):
+            raise RunnerError("Suite returned invalid plan information")
         modules = plan_info.get("modules", created.get("modules"))
         if not isinstance(modules, list) or not modules:
             raise RunnerError("Suite plan has no modules")
@@ -246,8 +281,9 @@ def main(argv=None):
             try:
                 record = run_module(api, plan_id, module, handoff, args, evidence_dir)
             except RunnerError as error:
-                output["modules"].append(dict(name=module_name(module), status="FAILED", detail=str(error),
-                                               logUrl="", duration=0, infrastructureError=True))
+                output["modules"].append(getattr(error, "record", dict(
+                    name=module_name(module), status="FAILED", detail=str(error),
+                    logUrl="", duration=0, infrastructureError=True)))
                 raise
             record["status"], record["detail"] = apply_expected_outcome(record["name"], record["status"], record["detail"], expected)
             output["modules"].append(record)
@@ -255,7 +291,7 @@ def main(argv=None):
         exported = api.request("GET", "/api/plan/export/" + quote(plan_id, safe=""), decode=False)
         try:
             with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
-                if archive.testzip():
+                if not archive.namelist() or archive.testzip():
                     raise ValueError()
         except (zipfile.BadZipFile, ValueError) as error:
             raise RunnerError("Suite export was not a valid ZIP") from error

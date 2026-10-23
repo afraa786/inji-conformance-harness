@@ -27,7 +27,7 @@ def main() -> int:
         except (OSError, ValueError, TypeError) as error:
             errors.append(f"{component}: invalid results ({error})")
     summary = {s.lower(): sum(m["status"] == s for m in modules) for s in
-               ("PASSED", "FAILED", "SKIPPED", "WARNING", "EXPECTED_FAILURE", "EXPECTED_SKIP")}
+               ("PASSED", "FAILED", "INTERRUPTED", "REVIEW", "SKIPPED", "WARNING", "EXPECTED_FAILURE", "EXPECTED_SKIP")}
     output = dict(component="combined", runs=runs, summary=summary, modules=modules, errors=errors)
     root.mkdir(exist_ok=True)
     (root / "results-combined.json").write_text(json.dumps(output, indent=2) + "\n", encoding="utf-8")
@@ -36,7 +36,7 @@ def main() -> int:
     report += ["", " | ".join(f"{s}: {n}" for s, n in summary.items()), ""] + errors
     (root / "report-combined.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     print("\n".join(report))
-    return int(bool(errors or summary["failed"] or any(runs.values())))
+    return int(bool(errors or summary["failed"] or summary["interrupted"] or any(runs.values())))
 
 
 if __name__ == "__main__":

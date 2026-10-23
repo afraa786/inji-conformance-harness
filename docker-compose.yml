@@ -23,28 +23,30 @@ services:
       retries: 30
 
   certify:
-    # TODO(verify): references only identify 0.14.0; replace with verified 1.0.x tag.
-    image: injistack/inji-certify-with-plugins:${CERTIFY_TAG:-0.14.0}
+    # Tagged upstream Helm + Docker Hub metadata verified 2026-10-23; alpha, not GA.
+    # https://github.com/inji/inji-certify/blob/v1.0.0-alpha.1/helm/inji-certify/values.yaml
+    image: injistack/inji-certify-with-plugins:${CERTIFY_TAG:-1.0.0-alpha.1}
     user: root
     ports: ['127.0.0.1:8090:8090']
     environment:
-      container_user: mosip
       active_profile_env: default,csvdp-farmer
       SPRING_CONFIG_NAME: certify
-      SPRING_CONFIG_LOCATION: /home/mosip/config/
+      SPRING_CONFIG_LOCATION: /home/inji/config/
       enable_certify_artifactory: 'false'
       download_hsm_client: 'false'
       mosip_certify_domain_url: http://certify:8090
     volumes:
       # TODO(verify): prepare release-matched properties, CSV plugin data, issuer
       # keys, credential registrations and local authorization-server settings.
-      - ${CERTIFY_CONFIG_DIR:-./local/certify-config}:/home/mosip/config:ro
-      - certify-keys:/home/mosip/CERTIFY_PKCS12
+      # Include alpha nonce Redis configuration; old simple-cache fixtures are insufficient.
+      - ${CERTIFY_CONFIG_DIR:-./local/certify-config}:/home/inji/config:ro
+      - certify-keys:/home/inji/CERTIFY_PKCS12
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      # TODO(verify): confirm wget and actuator path in the chosen Certify image.
+      # Actuator path is verified in the tagged Helm startup/readiness probes.
+      # TODO(verify): confirm wget availability in the alpha image at first startup.
       test: [CMD-SHELL, 'wget -q --spider http://localhost:8090/v1/certify/actuator/health']
       interval: 10s
       timeout: 5s
@@ -52,8 +54,9 @@ services:
       start_period: 60s
 
   verify:
-    # TODO(verify): references only identify 0.18.2; replace with verified 1.0.x tag.
-    image: injistack/inji-verify-service:${VERIFY_TAG:-0.18.2}
+    # https://github.com/inji/inji-verify/blob/v1.0.0-alpha.1/helm/inji-verify-service/values.yaml
+    # Tagged Helm and Docker Hub metadata agree; this is an alpha release.
+    image: injistack/inji-verify-service:${VERIFY_TAG:-1.0.0-alpha.1}
     user: root
     ports: ['127.0.0.1:8080:8080']
     environment:

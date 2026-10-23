@@ -34,29 +34,34 @@ services=(postgres mongodb server httpd "${components[@]}")
 timeout=${HEALTH_TIMEOUT_SECONDS:-600}
 [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || die 'HEALTH_TIMEOUT_SECONDS must be a positive integer'
 
-# Validate inputs without printing configuration, which can contain private keys.
+setting() {
+  "$python_bin" -c 'import os,sys; from runner.render_plans import read_env; read_env(); print(os.environ.get(sys.argv[1], sys.argv[2]))' "$1" "$2"
+}
+suite_url=$(setting SUITE_URL https://localhost:8443)
+# Render with the shared typed renderer; never print private plan configuration.
 for component in "${components[@]}"; do
+  target=$(setting CERTIFY_TARGET http://certify:8090/v1/certify)
+  [[ "$component" != verify ]] || target=$(setting VERIFY_TARGET http://verify:8080/v1/verify)
+  "$python_bin" runner/render_plans.py --component "$component" --target "$target" \
+    --suite-url "$suite_url" --out "results/rendered/$component-plan.json"
   "$python_bin" - "$component" "$expected_dir" <<'PY'
-import json, re, sys
+import sys
 from pathlib import Path
 from runner.conformance_runner import load_expected_failures
 component, directory = sys.argv[1:]
 try:
     load_expected_failures(str(Path(directory) / ('expected-failures-' + component + '.json')))
-    name = 'issuer' if component == 'certify' else 'verifier'
-    plan = json.loads(Path('configs/' + name + '-plan.json.tpl').read_text(encoding='utf-8'))
-    unresolved = set(re.findall(r'\{\{([^{}]+)\}\}', json.dumps(plan['config']))) - {'TARGET', 'SUITE_URL'}
-    if unresolved:
-        raise ValueError('render plan variables: ' + ', '.join(sorted(unresolved)))
 except Exception as error:
     print('Configuration error: ' + str(error), file=sys.stderr)
     sys.exit(2)
 PY
 done
 if (( ! no_up )); then
-  [[ -d "${DB_INIT_DIR:-./local/db-init}" ]] || die 'prepare DB_INIT_DIR; see README'
+  db_init_dir=$(setting DB_INIT_DIR ./local/db-init)
+  [[ -d "$db_init_dir" ]] || die 'prepare DB_INIT_DIR; see README'
   if [[ "$mode" != verify ]]; then
-    [[ -f "${CERTIFY_CONFIG_DIR:-./local/certify-config}/certify-default.properties" ]] || die 'prepare CERTIFY_CONFIG_DIR; see README'
+    certify_config_dir=$(setting CERTIFY_CONFIG_DIR ./local/certify-config)
+    [[ -f "$certify_config_dir/certify-default.properties" ]] || die 'prepare CERTIFY_CONFIG_DIR; see README'
   fi
 fi
 
@@ -99,14 +104,14 @@ if [[ "$mode" == combined ]]; then
 fi
 codes=()
 for component in "${components[@]}"; do
-  target=${CERTIFY_TARGET:-http://certify:8090/v1/certify}
-  [[ "$component" != verify ]] || target=${VERIFY_TARGET:-http://verify:8080/v1/verify}
+  target=$(setting CERTIFY_TARGET http://certify:8090/v1/certify)
+  [[ "$component" != verify ]] || target=$(setting VERIFY_TARGET http://verify:8080/v1/verify)
   out="results/results-$component.json"
   # Only discard this run's output so old results cannot mask an API failure.
   "$python_bin" -c 'import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.unlink() if p.exists() else None' "$out"
   code=0
   "$python_bin" runner/conformance_runner.py --component "$component" --target "$target" \
-    --suite-url "${SUITE_URL:-https://localhost:8443}" --out "$out" \
+    --suite-url "$suite_url" --out "$out" --plan "results/rendered/$component-plan.json" \
     --expected-failures "$expected_dir/expected-failures-$component.json" || code=$?
   if ((code == 0)); then
     "$python_bin" - "$out" <<'PY' || code=2
@@ -114,7 +119,7 @@ import sys
 from runner.diff_results import load_modules
 try:
     modules = load_modules(sys.argv[1])
-    if not modules or 'FAILED' in modules.values():
+    if not modules or set(modules.values()) & {'FAILED', 'INTERRUPTED'}:
         raise ValueError('no modules or unexpected failures')
 except (OSError, ValueError, TypeError) as error:
     print('Invalid run output: ' + str(error), file=sys.stderr)
