@@ -9,3 +9,5 @@ testrig-bridge/target/
 ".pytest_cache/" 
 '.local-deps/' 
 '.pytest_cache/' 
+.local-deps/
+.pytest_cache/
