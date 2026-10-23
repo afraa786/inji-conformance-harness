@@ -69,7 +69,9 @@ def test_happy_path_exact_api_contract(inputs, tmp_path, clock):
     assert record["status"] == "PASSED"
     assert record["logUrl"].endswith("log=run-1")
     assert record["duration"] == 2
-    assert (tmp_path / "certify-evidence/plan-export.zip").is_file()
+    assert (tmp_path / "certify-evidence/plan-1/plan-export.zip").is_file()
+    export = next(c.request for c in calls if "/api/plan/export/" in c.request.url)
+    assert export.headers["Accept"] == "application/zip"
 
 
 @pytest.mark.parametrize("status,code", [("FAILED", 1), ("WARNING", 0), ("SKIPPED", 0), ("REVIEW", 0), ("UNKNOWN", 1)])

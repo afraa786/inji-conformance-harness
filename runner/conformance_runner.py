@@ -292,8 +292,9 @@ def main(argv=None):
         modules = plan_info.get("modules", created.get("modules"))
         if not isinstance(modules, list) or not modules:
             raise RunnerError("Suite plan has no modules")
-        evidence_dir = Path(args.out).parent / (args.component + "-evidence")
+        evidence_dir = Path(args.out).parent / (args.component + "-evidence") / quote(plan_id, safe="")
         evidence_dir.mkdir(parents=True, exist_ok=True)
+        output["evidenceDirectory"] = str(evidence_dir)
         for module in modules:
             try:
                 record = run_module(api, plan_id, module, handoff, args, evidence_dir)
@@ -305,7 +306,8 @@ def main(argv=None):
             record["status"], record["detail"] = apply_expected_outcome(record["name"], record["status"], record["detail"], expected)
             output["modules"].append(record)
             print(f"{args.component}: {record['name']}: {record['status']}", flush=True)
-        exported = api.request("GET", "/api/plan/export/" + quote(plan_id, safe=""), decode=False)
+        exported = api.request("GET", "/api/plan/export/" + quote(plan_id, safe=""), decode=False,
+                               headers={"Accept": "application/zip"})
         try:
             with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
                 if not archive.namelist() or archive.testzip():

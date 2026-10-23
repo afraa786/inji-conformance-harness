@@ -93,6 +93,27 @@ def certificates():
         jwk = dict(kty="EC", crv="P-256", alg="ES256", use="sig", kid="harness-test-issuer",
                    d=encode(key.private_value), x=encode(key.public_numbers.x), y=encode(key.public_numbers.y))
         text("local/verifier-signing-jwk.json", json.dumps(jwk, indent=2) + "\n")
+    # The alpha's SD-JWT verifier requires an x5c chain. The suite propagates
+    # credential.signing_jwk.x5c into its real signed credentials.
+    jwk_path = Path("local/verifier-signing-jwk.json")
+    jwk = json.loads(jwk_path.read_text(encoding="utf-8"))
+    if not jwk.get("x5c"):
+        private_value = int.from_bytes(base64.urlsafe_b64decode(jwk["d"] + "=="), "big")
+        signing_key = ec.derive_private_key(private_value, ec.SECP256R1())
+        ca = x509.load_pem_x509_certificate((root / "ca.crt").read_bytes())
+        ca_key = serialization.load_pem_private_key((root / "ca.key").read_bytes(), password=None)
+        now = datetime.now(timezone.utc)
+        credential_certificate = (x509.CertificateBuilder()
+            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "suite.test")]))
+            .issuer_name(ca.subject).public_key(signing_key.public_key()).serial_number(x509.random_serial_number())
+            .not_valid_before(now - timedelta(minutes=5)).not_valid_after(now + timedelta(days=90))
+            .add_extension(x509.BasicConstraints(ca=False, path_length=None), True)
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName("suite.test")]), False)
+            .add_extension(x509.KeyUsage(True, False, False, False, False, False, False, False, False), True)
+            .sign(ca_key, hashes.SHA256()))
+        jwk["x5c"] = [base64.b64encode(c.public_bytes(serialization.Encoding.DER)).decode()
+                      for c in (credential_certificate, ca)]
+        text(jwk_path, json.dumps(jwk, indent=2) + "\n")
 
 
 def main():
