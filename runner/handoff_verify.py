@@ -34,7 +34,7 @@ def validate_request(payload, client_id):
         raise RunnerError("Verify clientId does not match the rendered plan")
     if payload.get("responseCodeValidationRequired", False) is not False:
         raise RunnerError("This cross-device handoff requires responseCodeValidationRequired=false")
-    if "nonce" in payload and not re.fullmatch(r"[A-Za-z0-9._~-]{16,}", str(payload["nonce"])):
+    if "nonce" in payload and (not isinstance(payload["nonce"], str) or not re.fullmatch(r"[A-Za-z0-9._~-]{16,}", payload["nonce"])):
         raise RunnerError("Verify nonce must be at least 16 URL-safe ASCII characters")
     query = payload.get("dcqlQuery")
     if not isinstance(query, dict) or not isinstance(query.get("credentials"), list) or not query["credentials"]:
@@ -111,6 +111,8 @@ class VerifyHandoff:
     def drive(self, api, info, context):
         if context.get("submitted"):
             self._result(context)
+            if context.get("moduleName") in POSITIVE_MODULES and context.get("verifyOutcome") == "FAILED":
+                raise HandoffFailure("Verify rejected the positive-module presentation")
             return False
         inputs = info.get("browser", {}).get("uriInputRequests", [])
         if not inputs:

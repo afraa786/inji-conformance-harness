@@ -105,6 +105,26 @@ def main():
         # The tagged init is destructive by design. Apply it only on a NEW empty
         # volume via Postgres entrypoint; this script never resets an existing DB.
         init = init.replace("/home/mosip/config/", "/home/inji/config/")
+        # Register an actual SD-JWT credential rather than running an SD-JWT plan
+        # against the upstream SQL's LDP-only FarmerCredential sample.
+        # Fields/template shape: alpha api-test/Sd_Jwt/AddCredentialConfigSd_Jwt.
+        template = {"issuer": "${_issuer}", "validFrom": "${validFrom}", "validUntil": "${validUntil}",
+                    "credentialSubject": {"id": "${_holderId}", "fullName": "${fullName}"}}
+        encoded = base64.b64encode(json.dumps(template).encode()).decode()
+        init += """\nINSERT INTO certify.credential_config (
+credential_config_key_id, config_id, status, vc_template, sd_jwt_vct,
+credential_format, did_url, key_manager_app_id, key_manager_ref_id, signature_algo,
+sd_claim, display, display_order, scope, cryptographic_binding_methods_supported,
+credential_signing_alg_values_supported, proof_types_supported, sd_jwt_claims,
+plugin_configurations, cr_dtimes)
+VALUES ('HarnessSdJwtCredential',gen_random_uuid()::text,'active','""" + encoded + """',
+'urn:eudi:pid:1','dc+sd-jwt','did:web:certify.test%3A8446:v1:certify',
+'CERTIFY_VC_SIGN_EC_R1','EC_SECP256R1_SIGN','ES256','fullName',
+'[{"name":"Harness Test Credential","locale":"en"}]'::jsonb, ARRAY['fullName'],
+'harness-test',ARRAY['did:jwk'],ARRAY['ES256'],
+'{"jwt":{"proof_signing_alg_values_supported":["ES256"]}}'::jsonb,
+'{"fullName":{"display":[{"name":"Test name","locale":"en"}]}}'::jsonb,
+'[]'::jsonb,now());\n"""
         text("local/db-init/10-certify.sql", init)
         text("local/db-init/20-verify.sql", "\\connect inji_verify\nCREATE SCHEMA IF NOT EXISTS verify;\n")
         base = source("inji-certify", CERTIFY_ROOT + "config/certify-default.properties")
@@ -141,7 +161,7 @@ inji.keystore.file.path=file:/tls/verify-keystore.p12
         text("local/verify-request.json", json.dumps({"responseCodeValidationRequired": False, "dcqlQuery": {
             "credentials": [{"id": "pid", "format": "dc+sd-jwt", "meta": {"vct_values": ["urn:eudi:pid:1"]},
                              "require_cryptographic_holder_binding": True}]}}, indent=2) + "\n")
-        text("local/claims.json", json.dumps({"id": "TEST001", "fullName": "Test Farmer"}) + "\n")
+        text("local/claims.json", json.dumps({"fullName": "Test Farmer"}) + "\n")
         print("Prepared release-matched development SQL/properties, synthetic inputs and local CA under local/.")
         print("Existing .env/keys were retained. No containers or databases were changed.")
         return 0

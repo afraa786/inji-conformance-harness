@@ -32,6 +32,18 @@ def write_results(path, value):
     temporary.replace(path)
 
 
+def write_report(path, output):
+    report = Path(path).with_name("report-" + output["component"] + ".md")
+    lines = ["# " + output["component"].capitalize() + " conformance", "",
+             "Runner exit: " + str(output["exitCode"]), "", "| Module | Status | Seconds |", "| --- | --- | --- |"]
+    for module in output["modules"]:
+        lines.append("| " + module["name"].replace("|", "\\|") + " | " + module["status"] + " | " + str(module.get("duration", 0)) + " |")
+    if output["errors"]:
+        lines += ["", "Infrastructure errors:", ""] + ["- " + message for message in output["errors"]]
+    lines += ["", "REVIEW/SKIPPED do not establish conformance. See JSON and private evidence logs for details."]
+    report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def load_expected_failures(path):
     if not path:
         return {}
@@ -66,7 +78,7 @@ class SuiteAPI:
         self.session = requests.Session()
         # Local self-signed suite only: .env.example exposes this development flag.
         # All Inji requests use separate sessions with normal TLS verification.
-        flag = os.environ.get("OIDC_SUITE_INSECURE", "true").lower()
+        flag = os.environ.get("OIDC_SUITE_INSECURE", "false").lower()
         if flag not in {"true", "false"}:
             raise RunnerError("OIDC_SUITE_INSECURE must be true or false")
         self.session.verify = flag != "true"
@@ -149,7 +161,8 @@ def run_module(api, plan_id, module, handoff, args, output_dir):
     api.deadline = min(global_deadline, start + args.module_timeout_seconds)
     record = dict(name=name, status="FAILED", detail="Module did not complete", logUrl="", duration=0,
                   variant=module.get("variant", {}) if isinstance(module, dict) else {})
-    rid, context, failure, timed_out = None, {}, None, False
+    rid, context, failure, timed_out = None, {"moduleName": name}, None, False
+    last_state = "CREATED"
     try:
         params = {"test": name, "plan": plan_id}
         if record["variant"]:
@@ -197,14 +210,18 @@ def run_module(api, plan_id, module, handoff, args, output_dir):
             time.sleep(min(args.poll_interval, max(0, api.deadline - time.monotonic())))
     except HandoffFailure as error:
         record["status"], record["detail"] = "FAILED", str(error)
+        timed_out = last_state not in {"FINISHED", "INTERRUPTED"}
     except RunnerError as error:
         failure = error
         record.update(status="FAILED", detail=str(error), infrastructureError=True)
+        timed_out = last_state not in {"FINISHED", "INTERRUPTED"}
     finally:
         api.deadline = global_deadline
         record["duration"] = round(time.monotonic() - start, 3)
     if context.get("verifyOutcome"):
         record["verifyOutcome"] = context["verifyOutcome"]
+    if context.get("verification") and rid:
+        write_results(output_dir / (rid + "-verify-result.json"), context["verification"])
     try:
         if rid:
             if timed_out:
@@ -309,6 +326,7 @@ def main(argv=None):
         output["exitCode"] = exit_code
         try:
             write_results(args.out, output)
+            write_report(args.out, output)
         except OSError:
             print("Could not write results", file=sys.stderr)
             exit_code = 2

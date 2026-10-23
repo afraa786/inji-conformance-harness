@@ -1,7 +1,8 @@
 {
   "_comment": [
-    "Sources: inji-verify/docs/OpenID4VPCrossDeviceFlow.md (Draft 23, Presentation Exchange), docs/SD-JWT-Support.md; verify-service Constants.RESPONSE_MODE=direct_post; suite VP1FinalVerifierTestPlan.java.",
-    "TODO(verify): final suite only supports redirect_uri/x509_san_dns/x509_hash client prefixes; Inji reference signs with a DID key and uses Presentation Exchange. No supported final-1.0 combination is evidenced. redirect_uri/url_query are suite-valid diagnostic defaults, not compatibility claims. Final DCQL and evidence upload require release-specific support."
+    "Sources: inji/inji-verify tag v1.0.0-alpha.1 VPRequestCreateDto, AuthorizationRequestResponseDto, Constants and VerifiablePresentationRequestServiceImpl.",
+    "Alpha accepts DCQL and echoes a non-decentralized_identifier clientId in unsigned authorizationDetails. redirect_uri clientId equals the public v2 direct-post URI with its scheme prefix; response_mode is direct_post.",
+    "The suite creates SD-JWT credentials with vct urn:eudi:pid:1. A real result is fetched with status checks enabled; no client_metadata or verification outcome is fabricated."
   ],
   "planName": "oid4vp-1final-verifier-test-plan",
   "variant": {

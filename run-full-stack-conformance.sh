@@ -40,8 +40,8 @@ setting() {
 suite_url=$(setting SUITE_URL https://localhost:8443)
 # Render with the shared typed renderer; never print private plan configuration.
 for component in "${components[@]}"; do
-  target=$(setting CERTIFY_TARGET http://certify:8090/v1/certify)
-  [[ "$component" != verify ]] || target=$(setting VERIFY_TARGET http://verify:8080/v1/verify)
+  target=$(setting CERTIFY_TARGET https://certify.test:8446)
+  [[ "$component" != verify ]] || target=$(setting VERIFY_TARGET https://verify.test:8447/v1/verify)
   "$python_bin" runner/render_plans.py --component "$component" --target "$target" \
     --suite-url "$suite_url" --out "results/rendered/$component-plan.json"
   "$python_bin" - "$component" "$expected_dir" <<'PY'
@@ -68,6 +68,7 @@ fi
 cleanup() {
   code=$?
   trap - EXIT
+  "$python_bin" runner/capture_diagnostics.py "$code" || true
   if ((down)); then
     if ! docker compose down --remove-orphans; then
       echo 'Error: Compose teardown failed' >&2
@@ -81,7 +82,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 docker compose config --quiet
 if ((! no_up)); then
-  docker compose up -d "${services[@]}"
+  "$python_bin" runner/stack_control.py "${services[@]}"
 fi
 deadline=$((SECONDS + timeout))
 for service in "${services[@]}"; do
@@ -104,14 +105,15 @@ if [[ "$mode" == combined ]]; then
 fi
 codes=()
 for component in "${components[@]}"; do
-  target=$(setting CERTIFY_TARGET http://certify:8090/v1/certify)
-  [[ "$component" != verify ]] || target=$(setting VERIFY_TARGET http://verify:8080/v1/verify)
+  target=$(setting CERTIFY_TARGET https://certify.test:8446)
+  [[ "$component" != verify ]] || target=$(setting VERIFY_TARGET https://verify.test:8447/v1/verify)
   out="results/results-$component.json"
   # Only discard this run's output so old results cannot mask an API failure.
   "$python_bin" -c 'import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.unlink() if p.exists() else None' "$out"
   code=0
   "$python_bin" runner/conformance_runner.py --component "$component" --target "$target" \
     --suite-url "$suite_url" --out "$out" --plan "results/rendered/$component-plan.json" \
+    --waiting-timeout-seconds "${WAITING_TIMEOUT_SECONDS:-120}" \
     --expected-failures "$expected_dir/expected-failures-$component.json" || code=$?
   if ((code == 0)); then
     "$python_bin" - "$out" <<'PY' || code=2
