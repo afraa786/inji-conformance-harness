@@ -154,3 +154,39 @@ def test_redirect_is_not_followed(monkeypatch):
         api.request("GET", "/api/info/test")
     assert len(responses.calls) == 1
     api.session.close()
+
+
+@responses.activate
+def test_running_module_timeout_is_failed(inputs, tmp_path, clock):
+    api_setup([{"status": "RUNNING"}])
+    responses.add(responses.DELETE, BASE + "/api/runner/run-1", json={})
+    assert runner.main(inputs + ["--module-timeout-seconds", "2"]) == 1
+    record = json.loads((tmp_path / "results.json").read_text())["modules"][0]
+    assert record["status"] == "FAILED" and "Module/global timeout" in record["detail"]
+
+
+@responses.activate
+def test_waiting_handoff_receives_live_values(inputs, tmp_path, clock, monkeypatch):
+    from runner.handoff_certify import CertifyHandoff
+    api_setup([{"status": "WAITING"}, {"status": "FINISHED", "result": "PASSED"}])
+    responses.add(responses.GET, BASE + "/api/runner/run-1", json={"exposed": {"credential_offer_endpoint": "https://suite.example/offer"}})
+    seen = []
+    def drive(self, api, info, context):
+        seen.append(info["exposed"]["credential_offer_endpoint"])
+        return True
+    monkeypatch.setattr(CertifyHandoff, "drive", drive)
+    assert runner.main(inputs) == 0
+    assert seen == ["https://suite.example/offer"]
+
+
+@responses.activate
+def test_evidence_failure_cannot_be_allowlisted(inputs, tmp_path, clock):
+    path = tmp_path / "expected.json"
+    path.write_text(json.dumps([{"module": MODULE, "reason": "Tracked issue"}]))
+    api_setup([{"status": "FINISHED", "result": "FAILED"}])
+    responses.replace(responses.GET, BASE + "/api/log/run-1", status=503)
+    assert runner.main(inputs + ["--expected-failures", str(path)]) == 2
+    output = json.loads((tmp_path / "results.json").read_text())
+    assert output["modules"][0]["status"] == "FAILED"
+    assert output["modules"][0]["infrastructureError"]
+    assert output["modules"][0]["logUrl"].endswith("log=run-1")
