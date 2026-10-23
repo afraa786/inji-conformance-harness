@@ -15,15 +15,13 @@ import requests
 
 try:
     from .render_plans import render_plan
+    from .common import RunnerError, HandoffFailure
 except ImportError:
     from render_plans import render_plan
+    from common import RunnerError, HandoffFailure
 
 FAILURES = {"FAILED", "INTERRUPTED"}
 STATUSES = {"PASSED", "FAILED", "WARNING", "SKIPPED", "INTERRUPTED", "REVIEW", "EXPECTED_FAILURE", "EXPECTED_SKIP"}
-
-
-class RunnerError(Exception):
-    """Sanitized configuration/infrastructure error; never include HTTP bodies."""
 
 
 def write_results(path, value):
@@ -179,10 +177,15 @@ def run_module(api, plan_id, module, handoff, args, output_dir):
                     waiting_since = time.monotonic()
             else:
                 waiting_since = None
+                context.pop("offer_sent", None)
             time.sleep(min(args.poll_interval, max(0, api.deadline - time.monotonic())))
+    except HandoffFailure as error:
+        record["status"], record["detail"] = "FAILED", str(error)
     finally:
         api.deadline = global_deadline
         record["duration"] = round(time.monotonic() - start, 3)
+    if context.get("verifyOutcome"):
+        record["verifyOutcome"] = context["verifyOutcome"]
     evidence = api.request("GET", "/api/log/" + rid)
     write_results(output_dir / (rid + "-log.json"), evidence)
     return record

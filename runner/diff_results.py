@@ -7,7 +7,8 @@ import json
 import sys
 from pathlib import Path
 
-STATUSES = {"PASSED", "FAILED", "WARNING", "SKIPPED", "EXPECTED_FAILURE", "EXPECTED_SKIP"}
+STATUSES = {"PASSED", "FAILED", "WARNING", "SKIPPED", "INTERRUPTED", "REVIEW", "EXPECTED_FAILURE", "EXPECTED_SKIP"}
+FAILURES = {"FAILED", "INTERRUPTED"}
 
 
 def load_modules(path: str) -> dict[str, str]:
@@ -23,6 +24,8 @@ def load_modules(path: str) -> dict[str, str]:
         if not isinstance(name, str) or not name or status not in STATUSES:
             raise ValueError("module requires a name and recognized status")
         key = f"{component}/{name}" if component else name
+        if module.get("variant"):
+            key += json.dumps(module["variant"], sort_keys=True, separators=(",", ":"))
         if key in result:
             raise ValueError(f"duplicate module: {key}")
         result[key] = status
@@ -35,11 +38,12 @@ def main() -> int:
     parser.add_argument("current")
     args = parser.parse_args()
     try:
-        previous, current = load_modules(args.previous), load_modules(args.current)
+        previous = load_modules(args.previous) if Path(args.previous).is_file() else {}
+        current = load_modules(args.current)
     except (OSError, ValueError, TypeError) as error:
         print(f"Invalid results: {error}", file=sys.stderr)
         return 2
-    failing = [n for n, s in current.items() if s == "FAILED" and previous.get(n) != s]
+    failing = [n for n, s in current.items() if s in FAILURES and previous.get(n) not in FAILURES]
     passing = [n for n, s in current.items() if s == "PASSED" and previous.get(n) != s]
     changed = [n for n in current.keys() & previous.keys() if current[n] != previous[n]]
     for label, names in (("Newly failing", failing), ("Newly passing", passing), ("Changed status", changed)):
