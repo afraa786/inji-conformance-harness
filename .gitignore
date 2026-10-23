@@ -6,3 +6,6 @@ __pycache__/
 .local-deps/
 .pytest_cache/
 testrig-bridge/target/
+".pytest_cache/" 
+'.local-deps/' 
+'.pytest_cache/' 
