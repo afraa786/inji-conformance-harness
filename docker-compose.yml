@@ -1,10 +1,9 @@
 # Sources: inji-reference/{inji-certify,inji-verify}/docker-compose and
 # conformance-suite/docker-compose-prebuilt.yml. No reference files are modified.
-# All containers share DNS. Host runner uses localhost; callbacks use httpd:8443.
+# All containers share DNS. Host runner uses localhost; public DNS aliases resolve to httpd.
 # httpd is the upstream nginx TLS frontend (the reference no longer uses Apache).
-# Its bundled certificate is self-signed. Never use this development setup publicly.
-# TODO(verify): provision trusted TLS names/certificates for Inji and import the
-# suite CA into Inji trust stores; plain internal HTTP is only a bootstrap default.
+# prepare_local.py generates a local CA, SAN certificate and JVM truststore.
+# TLS terminates at httpd; Java and Python validate this CA. No global TLS bypass.
 services:
   postgres:
     image: postgres:${POSTGRES_TAG:-15}
@@ -14,7 +13,7 @@ services:
       POSTGRES_DB: inji_verify
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # TODO(verify): supply reviewed 1.0.x schemas for BOTH databases here.
+      # Tagged Certify DDL and an empty Verify schema; Verify's alpha entities build dev tables.
       - ${DB_INIT_DIR:-./local/db-init}:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: [CMD-SHELL, 'pg_isready -U postgres -d inji_verify']
@@ -27,20 +26,22 @@ services:
     # https://github.com/inji/inji-certify/blob/v1.0.0-alpha.1/helm/inji-certify/values.yaml
     image: injistack/inji-certify-with-plugins:${CERTIFY_TAG:-1.0.0-alpha.1}
     user: root
-    ports: ['127.0.0.1:8090:8090']
     environment:
       active_profile_env: default,csvdp-farmer
       SPRING_CONFIG_NAME: certify
       SPRING_CONFIG_LOCATION: /home/inji/config/
       enable_certify_artifactory: 'false'
       download_hsm_client: 'false'
-      mosip_certify_domain_url: http://certify:8090
+      mosip_certify_domain_url: https://certify.test:8446
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-DEV_ONLY_CHANGE_ME}
+      CERTIFY_KEYSTORE_PASSWORD: ${CERTIFY_KEYSTORE_PASSWORD:-DEV_ONLY_CHANGE_ME}
+      JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/tls/truststore.jks -Djavax.net.ssl.trustStoreType=JKS
     volumes:
-      # TODO(verify): prepare release-matched properties, CSV plugin data, issuer
-      # keys, credential registrations and local authorization-server settings.
-      # Include alpha nonce Redis configuration; old simple-cache fixtures are insufficient.
+      # Generated from alpha properties. Its VCICacheService supports simple cache
+      # for a single pod; retain nonce/preAuthCacheTxn/credentialOfferCache names.
       - ${CERTIFY_CONFIG_DIR:-./local/certify-config}:/home/inji/config:ro
       - certify-keys:/home/inji/CERTIFY_PKCS12
+      - ./local/tls:/tls:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,7 +59,6 @@ services:
     # Tagged Helm and Docker Hub metadata agree; this is an alpha release.
     image: injistack/inji-verify-service:${VERIFY_TAG:-1.0.0-alpha.1}
     user: root
-    ports: ['127.0.0.1:8080:8080']
     environment:
       active_profile_env: default
       DATABASE_HOST: postgres
@@ -67,13 +67,19 @@ services:
       DATABASE_SCHEMA: verify
       DATABASE_USERNAME: postgres
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-DEV_ONLY_CHANGE_ME}
-      INJI_VP_REQUEST_LONG_POLLING_TIMEOUT: '55000'
-      INJI_VP_SUBMISSION_BASE_URL: http://verify:8080/v1/verify
-      INJI_DID_VERIFY_URI: did:web:verify%3A8080:v1:verify
-      INJI_DID_VERIFY_PUBLIC_KEY_URI: did:web:verify%3A8080:verify#key-0
+      VERIFY_CONTEXT_PATH: /v1/verify
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/config/verify.properties
+      INJI_VP_REQUEST_LONG_POLLING_TIMEOUT: '1000'
+      INJI_VP_SUBMISSION_BASE_URL: https://verify.test:8447/v1/verify
+      INJI_DID_VERIFY_URI: did:web:verify.test%3A8447:v1:verify
+      INJI_DID_VERIFY_PUBLIC_KEY_URI: did:web:verify.test%3A8447:v1:verify#key-0
       INJI_KEYSTORE_FILE_PASS: ${VERIFY_KEYSTORE_PASSWORD:-DEV_ONLY_CHANGE_ME}
-      INJI_VERIFY_REDIRECT_URI: http://verify:8080
+      INJI_VERIFY_REDIRECT_URI: https://verify.test:8447
       INJI_VERIFY_CLAIMS_WITH_META_DATA: _sd,_sd_alg,iss,cnf,sub,aud,exp,nbf,iat,cti
+      JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/tls/truststore.jks -Djavax.net.ssl.trustStoreType=JKS
+    volumes:
+      - ./local/tls:/tls:ro
+      - ./local/verify-config:/config:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,10 +102,13 @@ services:
   server:
     image: registry.gitlab.com/openid/conformance-suite:${SUITE_TAG:-latest}
     environment:
-      BASE_URL: https://httpd:8443
-      BASE_MTLS_URL: https://httpd:8444
+      BASE_URL: https://suite.test:8443
+      BASE_MTLS_URL: https://suite.test:8444
       MONGODB_HOST: mongodb
       SPRING_PROFILES_ACTIVE: dev
+      JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/tls/truststore.jks -Djavax.net.ssl.trustStoreType=JKS
+    volumes:
+      - ./local/tls:/tls:ro
     depends_on:
       mongodb:
         condition: service_healthy
@@ -113,13 +122,19 @@ services:
 
   httpd:
     image: registry.gitlab.com/openid/conformance-suite/nginx:${SUITE_TAG:-latest}
-    ports: ['127.0.0.1:8443:8443', '127.0.0.1:8444:8444']
+    ports: ['127.0.0.1:8443:8443', '127.0.0.1:8444:8444', '127.0.0.1:8446:8446', '127.0.0.1:8447:8447']
+    volumes:
+      - ./configs/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./local/tls:/tls:ro
+    networks:
+      default:
+        aliases: [suite.test, certify.test, verify.test]
     depends_on:
       server:
         condition: service_healthy
     healthcheck:
-      # TODO(verify): confirm curl in the released suite nginx image; pin SUITE_TAG.
-      test: [CMD-SHELL, 'curl --fail --silent --insecure https://localhost:8443/ >/dev/null']
+      # TODO(verify): pin SUITE_TAG to the inspected suite release/digest.
+      test: [CMD-SHELL, 'curl --fail --silent --cacert /tls/ca.crt https://localhost:8443/ >/dev/null']
       interval: 5s
       timeout: 5s
       retries: 30
