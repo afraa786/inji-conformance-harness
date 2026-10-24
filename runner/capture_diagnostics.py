@@ -18,6 +18,8 @@ def redact(value):
             value = value.replace(secret, "[REDACTED]")
     value = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/-]+=*", r"\1[REDACTED]", value)
     value = re.sub(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "[REDACTED_JWT]", value)
+    value = re.sub(r'("(?:d|p|q|dp|dq|qi|k)"\s*:\s*")[^"]+("\s*[,}])', r'\1[REDACTED_JWK]\2', value)
+    value = re.sub(r'-----BEGIN (?:RSA |EC )?PRIVATE KEY-----.*?-----END (?:RSA |EC )?PRIVATE KEY-----', '[REDACTED_PRIVATE_KEY]', value, flags=re.DOTALL)
     value = re.sub(r'(?i)((?:password|secret|access_token|pre-authorized_code|private_key)\s*[=:]\s*)[^,;\s]+', r'\1[REDACTED]', value)
     return value
 

@@ -1,171 +1,192 @@
 # Inji conformance harness
 
-Python remains the REST driver, built against the OpenID suite's
-`scripts/conformance.py` and `scripts/run-test-plan.py` contracts. The Java 21
-TestNG bridge invokes it as a subprocess and reports each module separately.
-No Python file has been removed and no Java REST port is present.
+Python is the REST driver; Java 21 TestNG adapters invoke it as a subprocess.
+The implementation follows the OpenID suite's `scripts/conformance.py` and
+`scripts/run-test-plan.py` contracts. No product endpoint or verification result
+is mocked by the live harness.
 
-The defaults now use verified **1.0.0-alpha.1** Certify and Verify backend images.
-See [image evidence](docs/image-versions.md). These are alpha releases; a local
-end-to-end pass has not been observed. Deployment fixtures, TLS and the Verify
-v2 handoff remain incomplete.
+The actual alpha images have been started and tested. Trusted HTTPS, real DCQL
+handoff and positive Verify backend verification work. **The full conformance
+plans do not pass.** Certify's native AS/IAR contract and the suite's screenshot
+review requirement remain blockers. See [actual verification](docs/live-verification.md),
+[handoff evidence](docs/component-handoff.md), and [image evidence](docs/image-versions.md).
 
-## First checks
+## Setup
 
-Prerequisites: Docker Compose v2 for your later live run, Python 3.10+, Git Bash
-on Windows or bash on Linux, and Java 21/Maven for the bridge. Both reference
-`api-test/pom.xml` files set compiler source/target to **21**, overriding the older
-Java 11 requirement in the problem statement.
+Use Python 3.10+ (CI uses 3.12), Java 21, Maven, Docker Compose v2, and bash/Git
+Bash. Both local Inji api-test POMs require Java 21. Local execution used Java
+21.0.5, Maven 3.9.9, Docker Engine 27.5.1 and Compose 2.32.4. The available local
+Python was 3.8.10; tests ran, but cryptography warns that its support is deprecated.
+
+From the repository root:
 
 ```bash
 docker compose config --quiet
+# Copy only when .env does not already exist; retain your private settings.
 cp .env.example .env
 python -m pip install -r requirements.txt
-python -m pytest runner/tests -q
-bash -n run-full-stack-conformance.sh
-python -m py_compile runner/*.py
-mvn -q -o -f testrig-bridge/pom.xml validate
+python runner/prepare_local.py
+python -m pytest runner/tests -q --basetemp=local/pytest-tmp --junitxml=results/unit-tests.xml
 ```
 
-The unit tests use mocked HTTP, not a running suite or Inji services. Offline
-Maven validation checks the project model; it does not compile or run Java tests.
+Preparation fetches only named files from upstream tag `v1.0.0-alpha.1`, generates
+private development keys, a local CA/SAN certificate, Java truststore, synthetic
+identity data and alpha-matched properties/SQL under ignored `local/`. Existing
+keys and `.env` are retained; generated config/SQL files are refreshed. It never
+modifies reference repositories or resets an existing database.
 
-## Prepare the live stack
+Postgres entrypoint initialization runs **only on an empty volume**. Changes to
+generated SQL do not migrate an existing database automatically. Do not delete
+existing data to apply a fixture update; use a reviewed targeted migration.
 
-1. Prepare `local/db-init` with reviewed alpha-version schemas for
-   `inji_certify`/`certify` and `inji_verify`/`verify`. Initialization runs only
-   on a fresh database volume. Reference SQL lives under each repository's
-   `db_scripts/`; do not modify those reference folders.
-2. Prepare `local/certify-config` with release-matched `certify-default.properties`,
-   `certify-csvdp-farmer.properties`, CSV test identity data, issuer/keystore setup,
-   and registered credential configurations. Compose mounts it at `/home/inji/config`.
-   The alpha's nonce handling needs Redis configuration; old simple-cache fixtures
-   are insufficient. Supply the development database password through `.env`.
-3. Configure trusted HTTPS Inji hostnames reachable by the suite. Current internal
-   HTTP addresses are bootstrap defaults and cannot satisfy protocol HTTPS checks.
-   The suite frontend is service `httpd` (the upstream nginx image), advertising
-   `https://httpd:8443`; the host driver accesses `https://localhost:8443`.
-   Inji trust stores must trust the suite certificate; Inji HTTPS calls from Python
-   use normal certificate validation. Configure `REQUESTS_CA_BUNDLE` if needed.
-4. Set plan inputs in `.env` or exported variables. `render_plans.py` resolves
-   all placeholders, preserves JSON objects and rejects missing inputs. It never
-   executes `.env` as shell code. Shell environment values take precedence.
-5. Adapt the remaining Verify alpha v2/DCQL handoff before expecting unattended
-   success. The local reference's legacy `/vp-request` flow is not the alpha API.
-   See [image evidence](docs/image-versions.md) and [API automation](docs/api-automation.md).
-
-After preparation, run:
+## Start and execute
 
 ```bash
-bash run-full-stack-conformance.sh --component certify --down
-bash run-full-stack-conformance.sh --component verify --down
-bash run-full-stack-conformance.sh --combined --down
+docker compose up -d --wait --wait-timeout 180 postgres mongodb server httpd certify verify
+WAITING_TIMEOUT_SECONDS=15 bash run-full-stack-conformance.sh --component certify --no-up
+WAITING_TIMEOUT_SECONDS=15 bash run-full-stack-conformance.sh --component verify --no-up
+WAITING_TIMEOUT_SECONDS=10 bash run-full-stack-conformance.sh --combined --no-up
 ```
 
-`--no-up` reuses healthy services. `--down` tears down project containers/network
-after preflight, including failures; it retains volumes. `--expected-failures-dir`
-selects a directory with `expected-failures-certify.json` and
-`expected-failures-verify.json`. The whole-stack health timeout defaults to 600s
-(`HEALTH_TIMEOUT_SECONDS` overrides it).
+These are the diagnostic run modes exercised locally. The short WAITING budgets
+surface unresolved screenshot interactions promptly; they do not establish a
+certification pass. Without an override, WAITING timeout is 120s, per-module
+timeout 600s and global timeout 60 minutes.
 
-Each runner writes `results/results-<component>.json` and component evidence.
-Combined mode attempts both runs, writes `results/results-combined.json` and
-`results/report-combined.md`, and fails on either runner error or unexpected
-FAILED/INTERRUPTED results. Startup failures exit before combined reporting.
-Missing results and empty plans fail. REVIEW/SKIPPED are reported as such; they
-do not mean that a certification test passed.
+The wrapper normally starts the required services itself. `--no-up` reuses healthy
+services; `--down` tears down project containers/network on exit, retaining
+volumes. `--expected-failures-dir DIR` chooses files named
+`expected-failures-certify.json` and `expected-failures-verify.json`.
+`STACK_START_TIMEOUT_SECONDS` defaults to 1200, including image pulls;
+`HEALTH_TIMEOUT_SECONDS` defaults to 600. Slow first image pulls can take much
+longer than cached startup. Resume interrupted pulls with `docker compose pull`.
 
-## Test data and script interfaces
+Exit 0 means no unexpected module failures; 1 means FAILED/INTERRUPTED remains;
+2 means invalid configuration, missing services/results or infrastructure errors.
+Empty results fail. REVIEW/SKIPPED never mean a test passed. No observed failure
+has been automatically added to an expected-failure list.
 
-Private input files stay under ignored `local/`. Required inputs depend on the
-component:
+## URLs, trust and release configuration
 
-| Input | Purpose |
+| Variable | Default / purpose |
 | --- | --- |
-| `CREDENTIAL_CONFIGURATION_ID` | Registered Certify metadata ID |
-| `CERTIFY_CLAIMS_JSON` or `_FILE` | Claims accepted by that credential configuration |
-| `CLIENT_ID`, `CLIENT2_ID`, `CERTIFY_TX_CODE` | Suite client IDs and pre-authorization test code |
-| `VERIFIER_CLIENT_ID` | Verifier registration matching the selected suite variant |
-| `VERIFIER_SIGNING_JWK_JSON` or `_FILE` | Private test credential signing JWK |
-| `VERIFY_REQUEST_JSON` or `_FILE` | Current legacy handoff's presentation request body |
-| `ALIAS`, `REDIRECT_URI` | Optional overrides; renderer derives defaults |
+| `CERTIFY_TAG`, `VERIFY_TAG` | `1.0.0-alpha.1`, alpha releases rather than GA |
+| `SUITE_IMAGE`, `SUITE_FRONTEND_IMAGE` | Pinned to the exact downloaded server/frontend digests tested locally |
+| `SUITE_URL` | `https://localhost:8443`, host Python entry point |
+| `SUITE_PUBLIC_URL` | `https://suite.test:8443`, advertised Docker origin |
+| `CERTIFY_TARGET` | `https://certify.test:8446`, matching actual `credential_issuer` |
+| `CERTIFY_API_URL` | `https://localhost:8446/v1/certify`, host handoff API |
+| `VERIFY_TARGET` | `https://verify.test:8447/v1/verify`, suite-reachable verifier |
+| `VERIFY_API_URL` | `https://localhost:8447/v1/verify`, host handoff API |
+| `REQUESTS_CA_BUNDLE` | `./local/tls/ca.crt`; Python verifies HTTPS |
+| `OIDC_SUITE_INSECURE` | `false`; only an explicit true relaxes the isolated suite session |
+| `OIDC_SUITE_TOKEN` | Optional bearer token; absent for the dev-profile suite |
+| `POSTGRES_PASSWORD`, `CERTIFY_KEYSTORE_PASSWORD`, `VERIFY_KEYSTORE_PASSWORD` | Obvious development defaults supplied through `.env` |
+| `DB_INIT_DIR`, `CERTIFY_CONFIG_DIR` | Generated `local/db-init` and `local/certify-config` |
 
-`CERTIFY_TARGET`/`VERIFY_TARGET` are suite-reachable service URLs.
-`CERTIFY_API_URL`/`VERIFY_API_URL` are host-Python-reachable handoff URLs.
-`SUITE_URL` is host-visible; `SUITE_PUBLIC_URL` is its advertised Docker origin.
-`OIDC_SUITE_INSECURE=true` permits the development self-signed certificate only
-for the suite session; set false for trusted TLS. `OIDC_SUITE_TOKEN` is optional
-and never forwarded to Inji or redirect destinations.
+The gateway terminates TLS with a certificate covering localhost and Docker DNS
+aliases. Java services trust the generated CA via a certificate-only JKS. The CA
+private key is not mounted into containers. No global hostname/TLS bypass is used.
+Internal upstream hops use HTTP only on the private Docker network. Host ports
+bind to 127.0.0.1. The 8444 listener does not currently exercise mTLS.
 
-```bash
-python runner/render_plans.py --component certify --target https://issuer.example/v1/certify --out results/rendered/certify-plan.json
-python runner/conformance_runner.py --component certify --target https://issuer.example/v1/certify --plan results/rendered/certify-plan.json --out results/results-certify.json --expected-failures runner/expected-failures-certify.json
-python runner/diff_results.py previous-results.json results/results-certify.json
-```
+For manual browser review, trust the development CA and add
+`127.0.0.1 suite.test certify.test verify.test` to your hosts file yourself.
+Automated host Python uses localhost URLs and needs no hosts-file change.
+See [architecture](docs/architecture.md) and [troubleshooting](docs/troubleshooting.md).
 
-Runner options include `--suite-url`, `--timeout-minutes` (60),
-`--module-timeout-seconds` (600), `--waiting-timeout-seconds` (120), and
-`--poll-interval` (3). Exit codes are 0 expected outcomes, 1 unexpected test
-failure, and 2 configuration/infrastructure failure. [REST sequence and schema](docs/api-automation.md).
+Certify uses the alpha source's single-pod simple-cache implementation with its
+nonce/pre-auth caches. This is not a multi-pod production configuration. Verify
+uses its alpha JPA entities to build the development schema, avoiding stale PEX
+DDL. Health checks require JSON `status=UP`, not just HTTP 200.
 
-Expected-failure lists start empty. Format:
+## Test data and renderer
 
-```json
-[{"module": "exact-suite-module-name", "reason": "Tracked issue explaining the exception"}]
-```
+Generated inputs are synthetic: `HarnessSdJwtCredential`, `Test Farmer`, a
+DCQL query for `urn:eudi:pid:1`, and fresh signing keys. They exercise the actual
+services. `VERIFIER_SIGNING_JWK_JSON_FILE` includes a real CA-signed `x5c` chain.
+Private files stay under `local/` and are never committed by the harness.
 
-Listed failures/interruption become EXPECTED_FAILURE; listed skips become
-EXPECTED_SKIP. A newly passing entry remains PASSED and asks for removal in its
-detail. Infrastructure errors cannot be allowlisted. The diff tool reports newly
-failing/passing, changed statuses and removals; a missing baseline means no prior
-modules. Variant values distinguish multiple instances of the same module.
+The renderer loads literal `.env` values without executing shell code; exported
+environment values win. It resolves placeholders recursively and preserves JSON
+objects. Missing inputs fail before startup. Inputs include:
 
-`upload_results.py` optionally uploads to MinIO's `automationtests` bucket when
-all three `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` are set;
-install `requirements-upload.txt` first. Partial configuration or upload failure
-returns 2. With no MinIO configuration it returns 0 without uploading.
-
-## Java bridge
-
-`testrig-bridge/pom.xml` compiles both existing adapters using Java 21, TestNG
-and the same OpenJSON parser as Certify's testrig. The adapters use
-`env.endpoint`, the real api-testrig `ConfigManager.getproperty("env.endpoint")`
-when available, then `ENV_ENDPOINT`. They propagate runner exit failures and
-reject stale, empty or invalid results. TestNG `Reporter.log` feeds installed
-report listeners; no independent Extent API is assumed.
-
-After configuring a live stack, run the standalone bridge yourself:
+- `CREDENTIAL_CONFIGURATION_ID`, `CERTIFY_CLAIMS_JSON` or `_FILE`, `CERTIFY_TX_CODE`.
+- `CLIENT_ID`, `CLIENT2_ID`; the suite generates missing client proof keys.
+- `VERIFIER_CLIENT_ID`, `VERIFY_REQUEST_JSON` or `_FILE`, and
+  `VERIFIER_SIGNING_JWK_JSON` or `_FILE`.
+- Optional `ALIAS` and `REDIRECT_URI` overrides.
 
 ```bash
-mvn -f testrig-bridge/pom.xml test -Dconformance.root="$(pwd)" -Denv.endpoint=https://issuer.example/v1/certify -Dtest=io.inji.testrig.apirig.injicertify.testscripts.OpenIDConformanceTest
+python runner/render_plans.py --component verify --target https://verify.test:8447/v1/verify --out results/rendered/verify-plan.json
+python runner/conformance_runner.py --component verify --target https://verify.test:8447/v1/verify --plan results/rendered/verify-plan.json --expected-failures runner/expected-failures-verify.json --out results/results-verify.json
+python runner/diff_results.py previous-results.json results/results-verify.json
 ```
 
-Use the equivalent `injiverify` class and Verify endpoint for Verify. Configuration
-properties: `conformance.python`, `conformance.runner`, `conformance.root`,
+The direct runner also accepts `--suite-url`, `--timeout-minutes`,
+`--module-timeout-seconds`, `--waiting-timeout-seconds` and `--poll-interval`.
+[Exact API sequence and schema](docs/api-automation.md).
+
+Expected-failure format is
+`[{"module":"exact-suite-module-name","reason":"Tracked issue"}]`. Listed
+failures become EXPECTED_FAILURE; a listed module that passes remains PASSED and
+asks for removal in its detail. Infrastructure errors cannot be allowlisted.
+The diff reports new failures/passes/status changes; absent baseline means no prior
+modules. Variants distinguish repeated module names.
+
+## Outputs and CI
+
+- `results/results-certify.json`, `results/results-verify.json`: actual normalized results.
+- `results/report-certify.md`, `results/report-verify.md`: component summaries.
+- `results/results-combined.json`, `results/report-combined.md`: consolidated gate.
+- `results/<component>-evidence/<planId>/`: suite logs, validated ZIP export and
+  actual `*-verify-result.json` responses. Per-plan directories avoid mixing runs.
+- `results/diagnostics/`: bounded redacted Compose logs/status, plus startup log.
+- `results/unit-tests.xml`: tests of the harness, **not** product conformance proof.
+
+Raw suite exports/logs can contain private test credentials. Review before sharing.
+The CI workflow runs unit tests plus real certify, verify and combined jobs,
+generates ephemeral development fixtures, retains nonzero exits, uploads reports
+and diagnostics even after failure, and posts Markdown to the job summary.
+CI has not been executed remotely in this session; its failure path was exercised
+locally. Current real conformance failures mean those jobs should be red.
+
+Optional MinIO upload uses `runner/upload_results.py` and
+`requirements-upload.txt`, bucket `automationtests`, with all three
+`MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`. No settings means no
+upload; incomplete configuration/upload failure returns 2.
+
+## Java 21 subprocess bridge
+
+Both adapters were compiled and run with the real Python driver. TestNG reports
+preserve each module result and fail the build appropriately. Examples, run from
+the harness root:
+
+```bash
+mvn -f testrig-bridge/pom.xml test -Dtest=io.inji.testrig.apirig.injicertify.testscripts.OpenIDConformanceTest -Dconformance.root="$PWD" -Denv.endpoint=https://certify.test:8446 -Dconformance.results=results/bridge/results-certify.json -Dconformance.waitingTimeoutSeconds=5
+mvn -f testrig-bridge/pom.xml test -Dtest=io.inji.testrig.apirig.injiverify.testscripts.OpenIDConformanceTest -Dconformance.root="$PWD" -Denv.endpoint=https://verify.test:8447/v1/verify -Dconformance.results=results/bridge/results-verify.json -Dconformance.waitingTimeoutSeconds=5
+```
+
+Properties include `conformance.python`, `conformance.runner`, `conformance.root`,
 `conformance.target`, `conformance.results`, `conformance.suiteUrl`,
-`conformance.plan`, `conformance.expectedFailures`. Environment equivalents are
-`PYTHON`, `CONFORMANCE_RUNNER`, `CONFORMANCE_ROOT`, `CONFORMANCE_TARGET`,
-`CONFORMANCE_RESULTS`, `SUITE_URL`, `CONFORMANCE_PLAN`, `CONFORMANCE_EXPECTED_FAILURES`.
+`conformance.plan`, `conformance.expectedFailures`, `conformance.waitingTimeoutSeconds`,
+and `conformance.reportsDirectory`. The target resolver uses `env.endpoint`, the
+real ConfigManager when available, then `ENV_ENDPOINT`. The bridge rejects stale,
+empty or infrastructure-error results.
 
-To install into a real api-testrig, copy the Java class into its matching
-`src/main/java/io/inji/testrig/apirig/inji<component>/testscripts` package and
-include the supplied component XML in its TestNG suite. Preserve the existing
-`EmailableReport` listener. Add OpenJSON 1.0.11 if that checkout lacks it.
-The standalone POM intentionally uses no unavailable testrig listener.
+Standalone Maven uses TestNG's reports, not MOSIP Extent. To install into a
+**writable** real api-testrig checkout:
 
-## CI and current limitations
+```bash
+bash testrig-bridge/install-into-testrig.sh /path/to/writable/inji-certify certify
+bash testrig-bridge/install-into-testrig.sh /path/to/writable/inji-verify verify
+```
 
-The workflow retains Java 21 and Python setup and invokes the Python wrapper as
-a component matrix. It uploads available results and tears down after failures.
-Private deployment/key fixtures still need provisioning; it does not fabricate
-passing results. No commits, pushes or deployments are performed by this work.
+Include the installed XML in the real master suite and use its existing bootstrap
+and `EmailableReport` listener. Add OpenJSON 1.0.11 if absent. `Reporter.log` is
+preserved for those hooks. Extent integration has not been observed here because
+the standalone POM does not provide that framework runtime. Reference folders
+remain read-only; the installer refuses them.
 
-Inline verification comments identify remaining deployment requirements beside
-their configuration: TLS, schemas, Certify fixture setup, health-command availability,
-suite version pinning, and Verify alpha v2/evidence handling. A test run is still
-required before calling this an operational full-stack deployment.
-
-`.local-deps/` is ignored for new files. Some dependency files are already tracked
-in the current Git history; adding an ignore rule does not untrack them. They were
-left intact. To remove only those index entries yourself while retaining the
-installed files, run `git rm -r --cached .local-deps` before your next commit.
+`.local-deps/` remains ignored and `git ls-files .local-deps` returned no files.
+No dependencies were deleted. No commit or push is performed by these tools.

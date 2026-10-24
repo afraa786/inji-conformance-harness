@@ -149,10 +149,8 @@ VALUES ('HarnessSdJwtCredential',gen_random_uuid()::text,'active','""" + encoded
         text("local/db-init/10-certify.sql", init)
         text("local/db-init/20-verify.sql", "\\connect inji_verify\nCREATE SCHEMA IF NOT EXISTS verify;\n")
         base = source("inji-certify", CERTIFY_ROOT + "config/certify-default.properties")
-        # The tagged compose sample omitted the servlet prefix on this security
-        # allowlist entry, causing health to return an HTTP-200 error envelope.
-        base = base.replace("mosip.certify.security.ignore-auth-urls=/actuator/**",
-                            "mosip.certify.security.ignore-auth-urls=${server.servlet.path}/actuator/**")
+        # The tagged wildcard allowlist returned an HTTP-200 auth error for health
+        # in the real image. Explicit health-only matches below fix that defect.
         overrides = '''
 # Harness single-instance development overrides; original property names from the alpha.
 mosip.certify.security.ignore-auth-urls=/actuator/health,/v1/certify/actuator/health,**/error,**/swagger-ui/**,**/v3/api-docs/**,**/issuance/**,**/rendering-template/**,**/system-info/**,**/credential-configurations/**,**/.well-known/**,**/ledger-search/**,**/credentials/**,**/oauth/**,**/pre-authorized-data/**,**/credential-offer-data/**,**/nonce

@@ -25,8 +25,9 @@ the suite for orphaned plans after an outage. HTTP status/body errors are not
 retried or echoed. Requests have a 30s cap within module/global budgets.
 
 `OIDC_SUITE_TOKEN` adds an optional bearer header; the dev-profile suite does not
-require one. `OIDC_SUITE_INSECURE=true` is the documented local self-signed default;
-set false for trusted TLS. The suite session never follows redirects and rejects
+require one. `OIDC_SUITE_INSECURE=false` is the default; generated CA trust is
+provided through `REQUESTS_CA_BUNDLE`. Only an explicit true relaxes the isolated
+suite session. The suite session never follows redirects and rejects
 other origins. `SUITE_PUBLIC_URL` translates Docker-advertised callback addresses
 to the host-accessible suite URL. Inji uses separate TLS-verifying requests.
 
@@ -44,3 +45,9 @@ detail asks for removal from the list. Infrastructure errors cannot be allowlist
 
 Raw suite logs, exports and rendered plans may contain sensitive test material.
 They stay under ignored `results/`; do not publish them without review.
+
+Evidence is isolated under `results/<component>-evidence/<planId>/`; its path is
+reported as `evidenceDirectory`. Export requests explicitly accept application/zip.
+Verify records include the actual backend `verifyOutcome` and pending evidence
+when available. A screenshot-required WAITING state fails on timeout, even if
+backend credential verification succeeded. See [handoff](component-handoff.md).

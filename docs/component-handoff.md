@@ -49,13 +49,15 @@ verification succeeded.
 `POST /v1/certify/pre-authorized-data` uses the tagged request's
 `credential_configuration_id`, claims, expiry and 4–8 character alphanumeric
 transaction code. A returned `credential_offer_uri` must advertise HTTPS; the
-runner delivers it to the suite's exposed credential-offer endpoint. The native
-Certify authorization server then performs the real token exchange and issuance.
+runner delivers it to the suite's exposed credential-offer endpoint. The intended
+next step is native Certify token exchange and issuance; the observed suite run
+is interrupted before that step by the metadata incompatibility below.
 
 The generated SD-JWT credential configuration is separate from the upstream SQL's
 LDP-only sample. Its fields/template follow the tagged
 `api-test/.../Sd_Jwt/AddCredentialConfigSd_Jwt` data. Dummy identity data is clearly
-synthetic; the credential is issued by the actual service, never by a stub.
+synthetic; issuance is routed to the actual service, never to a stub. Successful
+credential issuance has not been observed in these conformance runs.
 
 Certify advertises an origin-only `credential_issuer`; its upstream nginx maps
 root well-known URLs into `/v1/certify/.well-known/`. The local gateway now does
