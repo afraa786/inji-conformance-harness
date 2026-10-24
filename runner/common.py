@@ -25,6 +25,8 @@ def target_request(method, url, deadline, expected=200, **kwargs):
         except requests.exceptions.SSLError as error:
             raise RunnerError("Inji TLS validation failed; configure REQUESTS_CA_BUNDLE") from error
         except (requests.ConnectionError, requests.Timeout) as error:
+            if method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+                raise RunnerError("Inji write response lost; outcome unknown, not retried to avoid duplicate requests") from error
             if attempt == 2:
                 raise RunnerError("Inji connection failed after 3 attempts") from error
             time.sleep(min(2 ** attempt, max(0, deadline - time.monotonic())))

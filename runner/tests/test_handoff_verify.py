@@ -97,9 +97,9 @@ def test_timeout_is_infrastructure_failure(setup, monkeypatch):
     from runner import common
     monkeypatch.setattr(common.time, "sleep", lambda _: None)
     responses.add(responses.POST, HOST + "/v2/vp-request", body=requests.Timeout("private request data"))
-    with pytest.raises(RunnerError, match="after 3 attempts"):
+    with pytest.raises(RunnerError, match="outcome unknown, not retried"):
         instance(setup).drive(None, {"browser": {"uriInputRequests": [{"submitUrl": SUITE + "/authorize"}]}}, {})
-    assert len(responses.calls) == 3
+    assert len(responses.calls) == 1
 
 
 @responses.activate

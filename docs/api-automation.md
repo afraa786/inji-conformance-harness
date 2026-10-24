@@ -19,10 +19,14 @@ The Java bridge invokes this driver as a subprocess. There is no Java REST port.
 8. `GET /api/log/{id}` saves evidence. `GET /api/plan/export/{planId}` saves a
    validated, nonempty ZIP. An evidence/API error is infrastructure failure.
 
-Connection errors and request timeouts retry three times with exponential
-backoff. A POST whose response was lost may have reached the server; inspect
-the suite for orphaned plans after an outage. HTTP status/body errors are not
+Read connection errors and request timeouts retry three times with exponential
+backoff. Writes are never retried after a lost response: their outcome is
+unknown and a retry could create duplicate plans or runs. Inspect the suite for
+orphaned plans after an outage. HTTP status/body errors are not
 retried or echoed. Requests have a 30s cap within module/global budgets.
+
+The suite's offer/authorization GET callbacks change state despite their HTTP
+method; those calls also disable retries after a lost response.
 
 `OIDC_SUITE_TOKEN` adds an optional bearer header; the dev-profile suite does not
 require one. `OIDC_SUITE_INSECURE=false` is the default; generated CA trust is
@@ -32,7 +36,8 @@ other origins. `SUITE_PUBLIC_URL` translates Docker-advertised callback addresse
 to the host-accessible suite URL. Inji uses separate TLS-verifying requests.
 
 The output contains `component`, `planId`, `modules`, `summary`, `errors`, and
-`exitCode`. Module records contain `name`, `variant`, `status`, `detail`, `logUrl`,
+`exitCode`, plus unique `runId`, UTC `startedAt` and `finishedAt`. Module records
+contain `name`, original `testId`, `variant`, `status`, `detail`, `logUrl`,
 and `duration` in seconds. Infrastructure failures preserve partial records.
 Statuses are PASSED, FAILED, WARNING, SKIPPED, INTERRUPTED, REVIEW,
 EXPECTED_FAILURE and EXPECTED_SKIP. Missing/unknown results fail.
@@ -51,3 +56,8 @@ reported as `evidenceDirectory`. Export requests explicitly accept application/z
 Verify records include the actual backend `verifyOutcome` and pending evidence
 when available. A screenshot-required WAITING state fails on timeout, even if
 backend credential verification succeeded. See [handoff](component-handoff.md).
+
+Repeatable `--module exact-name` selects a diagnostic subset of a fresh plan.
+`planModuleCount` and `selectedModules` distinguish it from a complete plan run;
+a nonexistent module fails before creating a module run. Subsets cannot establish
+whole-plan conformance.

@@ -36,6 +36,9 @@ def write_report(path, output):
     report = Path(path).with_name("report-" + output["component"] + ".md")
     lines = ["# " + output["component"].capitalize() + " conformance", "",
              "Runner exit: " + str(output["exitCode"]), "", "| Module | Status | Seconds |", "| --- | --- | --- |"]
+    if output.get("selectedModules"):
+        lines[3:3] = ["Diagnostic subset: " + str(len(output["modules"])) + "/" +
+                      str(output["planModuleCount"]) + " planned modules; not a complete plan run.", ""]
     for module in output["modules"]:
         lines.append("| " + module["name"].replace("|", "\\|") + " | " + module["status"] + " | " + str(module.get("duration", 0)) + " |")
     if output["errors"]:
@@ -97,7 +100,7 @@ class SuiteAPI:
             raise RunnerError("Invalid suite endpoint")
         return self.base + path
 
-    def request(self, method, path, *, expected=200, decode=True, **kwargs):
+    def request(self, method, path, *, expected=200, decode=True, retry_safe=None, **kwargs):
         url = self.local_url(path)
         for attempt in range(3):
             remaining = self.deadline - time.monotonic()
@@ -117,6 +120,8 @@ class SuiteAPI:
             except requests.exceptions.SSLError as error:
                 raise RunnerError("Suite TLS validation failed; check CA or OIDC_SUITE_INSECURE") from error
             except (requests.ConnectionError, requests.Timeout) as error:
+                if retry_safe is False or method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+                    raise RunnerError("Suite action response lost; outcome unknown, not retried to avoid duplicate execution") from error
                 if attempt == 2:
                     raise RunnerError("Suite connection failed after 3 attempts") from error
                 time.sleep(min(2 ** attempt, max(0, self.deadline - time.monotonic())))
@@ -172,6 +177,7 @@ def run_module(api, plan_id, module, handoff, args, output_dir):
         if not isinstance(runner_id, str) or not runner_id:
             raise RunnerError("Suite did not return a runner ID")
         rid = quote(runner_id, safe="")
+        record["testId"] = runner_id
         record["logUrl"] = api.base + "/log-detail.html?log=" + rid
         waiting_since, last_state, started = None, "CREATED", False
         handoff.deadline = api.deadline
@@ -204,7 +210,10 @@ def run_module(api, plan_id, module, handoff, args, output_dir):
                 live = api.request("GET", "/api/runner/" + rid)
                 if not isinstance(live, dict):
                     raise RunnerError("Suite returned invalid live runner information")
-                context["pendingEvidence"] = bool(live.get("browser", {}).get("uploadsRequired", 0))
+                browser = live.get("browser", {})
+                if not isinstance(browser, dict):
+                    raise RunnerError("Suite returned invalid browser interaction state")
+                context["pendingEvidence"] = bool(browser.get("uploadsRequired", 0))
                 if handoff.drive(api, live, context):
                     waiting_since = time.monotonic()
             else:
@@ -250,6 +259,7 @@ def parse_args(argv=None):
     parser.add_argument("--suite-url", help="Defaults to SUITE_URL or https://localhost:8443")
     parser.add_argument("--plan", help="Rendered JSON; otherwise render from environment")
     parser.add_argument("--expected-failures")
+    parser.add_argument("--module", action="append", help="Run only this exact module name; repeatable diagnostic subset")
     parser.add_argument("--timeout-minutes", type=float, default=60)
     parser.add_argument("--module-timeout-seconds", type=float, default=600)
     parser.add_argument("--waiting-timeout-seconds", type=float, default=120)
@@ -259,7 +269,10 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
-    output = dict(component=args.component, planId=None, modules=[], summary={}, errors=[])
+    from datetime import datetime, timezone
+    import uuid
+    output = dict(component=args.component, planId=None, modules=[], summary={}, errors=[],
+                  runId=str(uuid.uuid4()), startedAt=datetime.now(timezone.utc).isoformat())
     api, exit_code = None, 2
     try:
         read_env()
@@ -296,6 +309,13 @@ def main(argv=None):
         modules = plan_info.get("modules", created.get("modules"))
         if not isinstance(modules, list) or not modules:
             raise RunnerError("Suite plan has no modules")
+        output["planModuleCount"] = len(modules)
+        output["selectedModules"] = args.module
+        if args.module:
+            requested = set(args.module)
+            if requested - {module_name(module) for module in modules}:
+                raise RunnerError("Requested diagnostic module is not in the suite plan")
+            modules = [module for module in modules if module_name(module) in requested]
         evidence_dir = Path(args.out).parent / (args.component + "-evidence") / quote(plan_id, safe="")
         evidence_dir.mkdir(parents=True, exist_ok=True)
         output["evidenceDirectory"] = str(evidence_dir)
@@ -326,6 +346,7 @@ def main(argv=None):
         print("Conformance error: " + message, file=sys.stderr)
         exit_code = 2
     finally:
+        output["finishedAt"] = datetime.now(timezone.utc).isoformat()
         if api:
             api.session.close()
         output["summary"] = {s.lower(): sum(m["status"] == s for m in output["modules"]) for s in sorted(STATUSES)}

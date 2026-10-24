@@ -86,9 +86,14 @@ has been automatically added to an expected-failure list.
 
 The gateway terminates TLS with a certificate covering localhost and Docker DNS
 aliases. Java services trust the generated CA via a certificate-only JKS. The CA
-private key is not mounted into containers. No global hostname/TLS bypass is used.
+private key is not mounted into containers. The harness configures no global hostname/TLS bypass.
 Internal upstream hops use HTTP only on the private Docker network. Host ports
 bind to 127.0.0.1. The 8444 listener does not currently exercise mTLS.
+
+The upstream suite's own protocol HTTP client bypasses certificate/hostname
+validation internally; our truststore does not change that code. Separate normal
+JDK HTTPS checks from the suite container verify this deployment's CA, expiry and
+hostnames. This distinction also applies to CI; see [TLS evidence](docs/tls-validation.md).
 
 For manual browser review, trust the development CA and add
 `127.0.0.1 suite.test certify.test verify.test` to your hosts file yourself.
@@ -127,12 +132,30 @@ The direct runner also accepts `--suite-url`, `--timeout-minutes`,
 `--module-timeout-seconds`, `--waiting-timeout-seconds` and `--poll-interval`.
 [Exact API sequence and schema](docs/api-automation.md).
 
+To reproduce only the earliest blockers, using fresh diagnostic plans:
+
+```bash
+python runner/conformance_runner.py --component certify --target https://certify.test:8446 --module oid4vci-1_0-issuer-happy-flow --waiting-timeout-seconds 5 --out results/diagnostic/results-certify.json
+python runner/conformance_runner.py --component verify --target https://verify.test:8447/v1/verify --module oid4vp-1final-verifier-happy-flow --waiting-timeout-seconds 5 --out results/diagnostic/results-verify.json
+```
+
+These subsets are labelled explicitly and are not complete-plan results. The
+selected plain final verifier plan is itself alpha/non-certifiable in the suite;
+a passing diagnostic run would not establish an OpenID certification award.
+
 Expected-failure format is
 `[{"module":"exact-suite-module-name","reason":"Tracked issue"}]`. Listed
 failures become EXPECTED_FAILURE; a listed module that passes remains PASSED and
 asks for removal in its detail. Infrastructure errors cannot be allowlisted.
 The diff reports new failures/passes/status changes; absent baseline means no prior
 modules. Variants distinguish repeated module names.
+
+The wrapper archives prior summaries under unique `results/previous/` directories
+before a fresh run and writes `results/diff-<component>.txt` when a baseline exists.
+Read failures retry with backoff; ambiguous writes fail without retrying, preventing
+duplicate sessions after a lost response. Results carry unique run IDs, UTC
+timestamps and original suite test IDs. Use repeatable `--module exact-name` only
+for diagnostic subsets; selected modules and the full plan size are recorded.
 
 ## Outputs and CI
 

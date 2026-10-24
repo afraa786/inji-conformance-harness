@@ -141,7 +141,7 @@ class VerifyHandoff:
         # Preserve the actual verifier output. In particular, do not inject client_metadata
         # or change a protocol field to make a conformance condition pass.
         context.update(submitted=True, requestId=created["requestId"], transactionId=created["transactionId"])
-        api.request("GET", submit, params=params, decode=False)
+        api.request("GET", submit, params=params, decode=False, retry_safe=False)
         return True
 
     def finish(self, context, name):

@@ -70,3 +70,38 @@ are not evidence of Certify support. Also, the native AS advertises
 `CheckServerConfiguration` demands `authorization_endpoint`, even for this
 pre-authorized run. The runner reports the resulting interruptions. It does not
 invent an authorization endpoint or allowlist those failures.
+
+The exact alpha `certify-core/.../dto/OAuthAuthorizationServerMetadataDTO.java`
+explicitly documents that authorization_endpoint is excluded for its browserless
+IAR flow. `certify-service/.../services/OAuthAuthorizationServerMetadataService.java`
+has a property for interactive-authorization-endpoint, not authorization_endpoint.
+`OAuthController.processTokenRequest` dispatches pre-authorized grants without
+private_key_jwt validation. Changing the metadata URL cannot supply that capability.
+
+Authoritative tagged sources: [metadata DTO](https://github.com/inji/inji-certify/blob/v1.0.0-alpha.1/certify-core/src/main/java/io/mosip/certify/core/dto/OAuthAuthorizationServerMetadataDTO.java),
+[metadata service](https://github.com/inji/inji-certify/blob/v1.0.0-alpha.1/certify-service/src/main/java/io/mosip/certify/services/OAuthAuthorizationServerMetadataService.java),
+and [OAuth controller](https://github.com/inji/inji-certify/blob/v1.0.0-alpha.1/certify-service/src/main/java/io/mosip/certify/controller/OAuthController.java).
+No supported native-AS variant was found in this suite's final issuer plan;
+older draft plans do not establish final-version compatibility. This is not
+fixed by substituting an invented endpoint or changing the diagnostic variant.
+
+Targeted real rerun: plan `ygScrpZCgnBKj`, test `oE9sI3QaBhjlW28`, condition
+CheckServerConfiguration, required field authorization_endpoint. Verify targeted
+plan `bmimyUrL5IhZR`, test `FcOJuOzh90j7NuA`, backend SUCCESS followed by explicit
+screenshot timeout. Evidence is retained under `results/targeted/`.
+
+The inspected suite contains an optional automated evidence-page stand-in showing
+only direct-post acceptance. It does not display Verify's actual deferred result
+and is not used by this harness. No real Verify frontend/browser session currently
+exists in this backend-only stack; adding a screenshot of a fabricated page would
+not satisfy the verifier-result evidence requirement. A real UI/session and suite
+review remain external work; no browser automation pass is claimed.
+
+The exact alpha UI `verify-ui/src/components/Home/VerificationSection/VpVerification.tsx`
+renders VpSubmissionResult from SDK onVPProcessed state. The tagged SDK's
+`OpenID4VPVerification.tsx` owns creation, polling and result retrieval for that
+browser session. Its properties accept transactionId but do not expose a way to
+attach this running REST handoff's existing requestId. Capturing that real UI
+requires a UI-owned flow and trusted browser/network configuration, rather than
+rendering this driver's backend JSON as a purported verifier screenshot. That
+integration has not been implemented or validated here.

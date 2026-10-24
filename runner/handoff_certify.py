@@ -49,7 +49,7 @@ class CertifyHandoff:
         # The suite validates HTTPS and retrieves the offer using its internal DNS.
         if urlsplit(offer_uri).scheme != "https":
             raise RunnerError("Certify credential_offer_uri must advertise HTTPS")
-        api.request("GET", endpoint, params={"credential_offer_uri": offer_uri}, decode=False)
+        api.request("GET", endpoint, params={"credential_offer_uri": offer_uri}, decode=False, retry_safe=False)
         context["offer_sent"] = True
         return True
 

@@ -8,6 +8,7 @@ on:
       - 'runner/**'
       - 'configs/**'
       - 'testrig-bridge/**'
+      - 'tools/**'
       - 'docker-compose.yml'
       - 'requirements.txt'
       - 'run-full-stack-conformance.sh'
@@ -29,6 +30,8 @@ jobs:
           cache: pip
       - run: python -m pip install -r requirements.txt
       - run: python -m pytest runner/tests -q --junitxml=results/unit-tests.xml
+      - name: Compile the real Java subprocess adapters
+        run: mvn -B -q -f testrig-bridge/pom.xml test-compile
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -68,6 +71,12 @@ jobs:
             bash run-full-stack-conformance.sh --component '${{ matrix.mode }}'
           fi
       # Do not use continue-on-error: a failing plan or infrastructure error fails CI.
+      - name: Check normal Java CA and hostname validation from suite network
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p results
+          docker compose exec -T -e PROBE_COMPONENT='${{ matrix.mode }}' server jshell --execution local - < tools/probe-container-tls.jsh | tee results/tls-container-probe.txt
       - name: Save service diagnostics even after preflight/startup failure
         if: always()
         run: python runner/capture_diagnostics.py '${{ steps.real-run.outcome }}'

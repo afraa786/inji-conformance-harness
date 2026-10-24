@@ -29,6 +29,11 @@ Java trust and rejection without the CA. No JVM-global hostname bypass is set.
 The CA private key is never mounted into a container. The Verify signing keystore
 is mounted only into Verify. Private material stays in ignored `local/`.
 
+The suite's own protocol client installs a permissive trust manager and hostname
+verifier internally. Its protocol results cannot prove TLS trust validation.
+Independent default-JDK checks from that same container do validate the deployed
+CA, hostname and expiry; see [TLS validation](tls-validation.md).
+
 Internal upstream hops use HTTP on the private Docker network. Published host
 ports bind to 127.0.0.1. The 8444 listener is not configured to exercise mutual
 TLS; the current diagnostic plan selects DPoP, not mTLS. Do not select mTLS until

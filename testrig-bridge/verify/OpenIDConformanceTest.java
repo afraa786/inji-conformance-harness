@@ -50,7 +50,11 @@ public class OpenIDConformanceTest {
         Path output = Path.of(setting("conformance.results", "CONFORMANCE_RESULTS", "results/results-" + COMPONENT + ".json"));
         if (!output.isAbsolute()) output = root.resolve(output);
         Files.createDirectories(output.getParent());
-        Files.deleteIfExists(output); // Old output cannot turn a failed subprocess into a pass.
+        if (Files.exists(output)) {
+            Path archive = output.getParent().resolve("previous").resolve(java.util.UUID.randomUUID().toString());
+            Files.createDirectories(archive);
+            Files.move(output, archive.resolve(output.getFileName()));
+        } // Preserve evidence while preventing stale output from becoming a pass.
         List<String> command = new ArrayList<>(List.of(
             setting("conformance.python", "PYTHON", "python"),
             setting("conformance.runner", "CONFORMANCE_RUNNER", "runner/conformance_runner.py"),
@@ -80,12 +84,13 @@ public class OpenIDConformanceTest {
         Assert.assertEquals(results.getJSONArray("errors").length(), 0, "Runner reported infrastructure errors");
         JSONArray modules = results.getJSONArray("modules");
         Assert.assertTrue(modules.length() > 0, "No conformance modules ran");
-        Object[][] data = new Object[modules.length()][2];
+        Object[][] data = new Object[modules.length()][3];
         boolean unexpectedFailure = false;
         for (int i = 0; i < modules.length(); i++) {
             JSONObject module = modules.getJSONObject(i);
-            data[i][0] = module.getString("name") + " " + module.optJSONObject("variant");
+            data[i][0] = module.getString("name") + " [" + module.optString("testId", "unknown-id") + "] " + module.optJSONObject("variant");
             data[i][1] = module.getString("status");
+            data[i][2] = module.optString("detail", "") + " " + module.optString("logUrl", "");
             unexpectedFailure |= List.of("FAILED", "INTERRUPTED").contains(data[i][1]);
         }
         Assert.assertEquals(process.exitValue(), unexpectedFailure ? 1 : 0, "Runner exit/result mismatch");
@@ -93,8 +98,8 @@ public class OpenIDConformanceTest {
     }
 
     @Test(dataProvider = "conformanceResults")
-    public void conformanceModule(String name, String status) {
-        Reporter.log(name + " -> " + status, true); // Existing TestNG/report listener receives this.
+    public void conformanceModule(String name, String status, String detail) {
+        Reporter.log(name + " -> " + status + ": " + detail, true); // Existing TestNG/report listener receives this.
         switch (status.toUpperCase(Locale.ROOT)) {
             case "PASSED":
             case "WARNING":
@@ -103,9 +108,9 @@ public class OpenIDConformanceTest {
             case "SKIPPED":
             case "REVIEW":
             case "EXPECTED_SKIP":
-                throw new SkipException(name + " -> " + status);
+                throw new SkipException(name + " -> " + status + ": " + detail);
             default:
-                Assert.fail(name + " -> " + status);
+                Assert.fail(name + " -> " + status + ": " + detail);
         }
     }
 }

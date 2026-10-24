@@ -6,6 +6,7 @@ from pathlib import Path
 
 from runner.capture_diagnostics import redact
 from runner import stack_control
+from runner.archive_results import archive
 
 
 def test_startup_timeout_fails_and_preserves_log(tmp_path, monkeypatch):
@@ -36,3 +37,25 @@ def test_combined_output_fails_on_actual_failed_or_interrupted_status(tmp_path):
     assert result.returncode == 1
     combined = json.loads((root / "results-combined.json").read_text())
     assert combined["summary"]["failed"] == 1 and combined["summary"]["interrupted"] == 1
+
+
+def test_archive_preserves_previous_results_and_other_component(tmp_path):
+    root = tmp_path / "results"
+    root.mkdir()
+    for component in ("certify", "verify"):
+        (root / ("results-" + component + ".json")).write_text(component)
+    first = archive("certify", root)
+    second = archive("certify", root)
+    assert first != second
+    assert (first / "results-certify.json").read_text() == "certify"
+    assert not (first / "results-verify.json").exists()
+    assert (root / "results-verify.json").read_text() == "verify"
+
+
+def test_merge_rejects_missing_component_and_preserves_infrastructure_exit(tmp_path):
+    script = Path(__file__).resolve().parents[1] / "merge_results.py"
+    result = subprocess.run([sys.executable, str(script), "0"], cwd=tmp_path, capture_output=True)
+    assert result.returncode == 2
+    result = subprocess.run([sys.executable, str(script), "2", "0"], cwd=tmp_path, capture_output=True)
+    assert result.returncode == 2
+    assert json.loads((tmp_path / "results/results-combined.json").read_text())["exitCode"] == 2

@@ -67,6 +67,8 @@ def test_happy_path_exact_api_contract(inputs, tmp_path, clock):
     result = json.loads((tmp_path / "results.json").read_text())
     record = result["modules"][0]
     assert record["status"] == "PASSED"
+    assert record["testId"] == "run-1"
+    assert result["runId"] and result["startedAt"] <= result["finishedAt"]
     assert record["logUrl"].endswith("log=run-1")
     assert record["duration"] == 2
     assert (tmp_path / "certify-evidence/plan-1/plan-export.zip").is_file()
@@ -192,3 +194,46 @@ def test_evidence_failure_cannot_be_allowlisted(inputs, tmp_path, clock):
     assert output["modules"][0]["status"] == "FAILED"
     assert output["modules"][0]["infrastructureError"]
     assert output["modules"][0]["logUrl"].endswith("log=run-1")
+
+
+@responses.activate
+def test_lost_create_response_never_retries_or_leaks(inputs, tmp_path, clock):
+    responses.add(responses.POST, BASE + "/api/plan", body=requests.Timeout("PRIVATE_PAYLOAD"))
+    assert runner.main(inputs) == 2
+    assert len(responses.calls) == 1
+    result = (tmp_path / "results.json").read_text()
+    assert "outcome unknown" in result and "PRIVATE_PAYLOAD" not in result
+
+
+@responses.activate
+def test_invalid_info_json_fails_closed(inputs, clock):
+    api_setup([])
+    responses.add(responses.GET, BASE + "/api/info/run-1", body="not-json")
+    assert runner.main(inputs) == 2
+
+
+@responses.activate
+def test_unknown_module_filter_fails_before_execution(inputs, clock):
+    api_setup([])
+    assert runner.main(inputs + ["--module", "unknown-module"]) == 2
+    assert not any(urlsplit(c.request.url).path == "/api/runner" for c in responses.calls)
+
+
+@responses.activate
+def test_state_changing_handoff_get_is_not_replayed(clock):
+    responses.add(responses.GET, BASE + "/authorize", body=requests.Timeout("lost action response"))
+    api = runner.SuiteAPI(BASE, time.monotonic() + 60)
+    with pytest.raises(runner.RunnerError, match="outcome unknown"):
+        api.request("GET", "/authorize", retry_safe=False)
+    assert len(responses.calls) == 1
+    api.session.close()
+
+
+@responses.activate
+def test_malformed_browser_state_is_reported_as_infrastructure(inputs, tmp_path, clock):
+    api_setup([{"status": "WAITING"}])
+    responses.add(responses.GET, BASE + "/api/runner/run-1", json={"browser": []})
+    responses.add(responses.DELETE, BASE + "/api/runner/run-1", json={})
+    assert runner.main(inputs) == 2
+    result = json.loads((tmp_path / "results.json").read_text())
+    assert result["modules"][0]["infrastructureError"] is True

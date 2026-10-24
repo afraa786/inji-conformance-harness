@@ -33,3 +33,13 @@ describe DCQL and v2 API migration. The handoff now follows the tagged v2 reques
 The same Verify release's tagged UI Helm values specify
 `injistack/inji-verify-ui:1.0.0-alpha.1`. This harness drives the backend directly
 and does not currently start a frontend container.
+
+Rechecked 2026-10-24: actual running image IDs match the Certify/Verify digests
+above. Suite server and gateway image IDs match their Compose-pinned digests,
+although the older containers' Config.Image labels still say latest. No recreation
+was needed to change an image label. The official [Certify release list](https://github.com/inji/inji-certify/releases)
+still exposes the selected alpha alongside 0.14.0; no independently verified
+replacement satisfying the native-AS/final-plan mismatch was established.
+Images were not changed speculatively. The selected plain final VP plan itself
+is marked alpha and non-certifiable in VP1FinalVerifierTestPlan; diagnostic runs
+must not be presented as an OpenID certification award.

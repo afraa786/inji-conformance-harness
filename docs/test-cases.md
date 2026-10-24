@@ -17,3 +17,7 @@ python -m pytest runner/tests -q --basetemp=local/pytest-tmp --junitxml=results/
 Product-level runs are separate: use both component modes and combined mode in
 the README. Their observed failures are recorded in [live verification](live-verification.md).
 Unit fixtures never establish product conformance or certification.
+
+Additional regression cases cover lost POST responses and state-changing GET
+callbacks (no duplicate execution), malformed live browser state, unknown module
+selection, retained prior reports and combined infrastructure exit code 2.

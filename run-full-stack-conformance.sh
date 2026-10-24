@@ -100,6 +100,7 @@ for service in "${services[@]}"; do
 done
 
 mkdir -p results
+previous_dir=$("$python_bin" runner/archive_results.py "$mode")
 if [[ "$mode" == combined ]]; then
   "$python_bin" -c 'from pathlib import Path; [(p.unlink() if p.exists() else None) for p in (Path("results/results-combined.json"), Path("results/report-combined.md"))]'
 fi
@@ -129,6 +130,14 @@ except (OSError, ValueError, TypeError) as error:
 PY
   fi
   codes+=("$code")
+  if [[ -n "$previous_dir" && -f "$previous_dir/results-$component.json" && -f "$out" ]]; then
+    diff_code=0
+    "$python_bin" runner/diff_results.py "$previous_dir/results-$component.json" "$out" > "results/diff-$component.txt" || diff_code=$?
+    if ((diff_code != 0 && code == 0)); then
+      code=$diff_code
+      codes[${#codes[@]}-1]=$code
+    fi
+  fi
   echo "$component: runner exit=$code, results=$out"
 done
 if [[ "$mode" == combined ]]; then
