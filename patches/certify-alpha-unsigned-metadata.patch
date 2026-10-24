@@ -1,0 +1,25 @@
+--- a/certify-service/src/main/java/io/mosip/certify/controller/WellKnownController.java
++++ b/certify-service/src/main/java/io/mosip/certify/controller/WellKnownController.java
+@@ -6,6 +6,7 @@
+ import io.mosip.certify.core.spi.VCIssuanceService;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.http.HttpStatus;
++import org.springframework.http.MediaType;
+ import org.springframework.http.ResponseEntity;
+ import org.springframework.web.bind.annotation.GetMapping;
+ import org.springframework.web.bind.annotation.RestController;
+@@ -27,9 +28,11 @@
+     @Autowired
+     private JwksService jwksService;
+ 
+-    @GetMapping(value = "/.well-known/openid-credential-issuer", produces = "application/json")
+-    public CredentialIssuerMetadataDTO getCredentialIssuerMetadata() {
+-        return credentialConfigurationService.fetchCredentialIssuerMetadata();
++    @GetMapping(value = "/.well-known/openid-credential-issuer")
++    public ResponseEntity<CredentialIssuerMetadataDTO> getCredentialIssuerMetadata() {
++        // OID4VCI 1.0 section 12.2.2 permits unsigned metadata when JWT is unsupported.
++        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON)
++                .body(credentialConfigurationService.fetchCredentialIssuerMetadata());
+     }
+ 
+     @GetMapping(value = "/.well-known/did.json", produces = "application/json")

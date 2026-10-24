@@ -1,0 +1,4 @@
+# Explicit local derived suite, never represented as an official upstream image.
+services:
+  server:
+    image: inji-conformance-suite-strict-tls:local

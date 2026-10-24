@@ -1,0 +1,33 @@
+# Real alpha frontend and an isolated CA-trusting browser. No acceptInsecureCerts.
+services:
+  verify:
+    networks:
+      default:
+        aliases: [verify-service]
+  verify-ui:
+    image: injistack/inji-verify-ui:1.0.0-alpha.1
+    environment:
+      VP_SUBMISSION_SUPPORTED: 'true'
+      CLIENT_ID: redirect_uri:https://verify.test:8447/v1/verify/v2/vp-submission/direct-post
+      VERIFY_SERVICE_API_URL: /v1/verify
+      VERIFIABLE_CLAIMS_CONFIG_URL: /assets/config.json
+      INTERNET_CONNECTIVITY_CHECK_ENDPOINT: https://verify.test:8447/v1/verify/actuator/health
+    volumes:
+      - ./local/verify-ui/config.json:/usr/share/nginx/html/assets/config.json:ro
+    depends_on:
+      verify:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, 'wget -qO- http://localhost:8000/ >/dev/null']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  browser:
+    image: inji-conformance-browser:local
+    build:
+      context: ./local/browser-build
+    shm_size: 2gb
+    ports: ['127.0.0.1:4444:4444']
+  httpd:
+    volumes:
+      - ./local/verify-ui/nginx-gateway.conf:/etc/nginx/nginx.conf:ro

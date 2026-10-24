@@ -89,6 +89,31 @@ def test_interrupted_cannot_pass(inputs, clock):
     assert runner.main(inputs) == 1
 
 
+@pytest.mark.parametrize("module", ["oid4vci-1_0-issuer-metadata-test-signed", MODULE])
+@responses.activate
+def test_certify_discovery_interruption_never_runs_handoff_or_becomes_skip(
+        inputs, tmp_path, clock, monkeypatch, module):
+    from runner.handoff_certify import CertifyHandoff
+
+    def unexpected_handoff(*args):
+        pytest.fail("Discovery interruption must not generate a pre-authorized offer")
+
+    monkeypatch.setattr(CertifyHandoff, "drive", unexpected_handoff)
+    api_setup([{"status": "INTERRUPTED", "result": "FAILED"}])
+    responses.replace(responses.GET, BASE + "/api/plan/plan-1",
+                      json={"modules": [{"testModule": module}]})
+    evidence = [{"src": "EnsureContentTypeApplicationJwt", "result": "FAILURE",
+                 "msg": "Couldn't find content-type header in endpoint_response"}]
+    responses.replace(responses.GET, BASE + "/api/log/run-1", json=evidence)
+    assert runner.main(inputs) == 1
+    result = json.loads((tmp_path / "results.json").read_text())
+    assert result["modules"][0]["name"] == module
+    assert result["modules"][0]["status"] == "INTERRUPTED"
+    assert result["errors"] == []
+    assert json.loads((tmp_path / "certify-evidence/plan-1/run-1-log.json").read_text()) == evidence
+    assert not any("pre-authorized-data" in c.request.url for c in responses.calls)
+
+
 @responses.activate
 def test_waiting_reads_live_state_then_times_out_and_cancels(inputs, tmp_path, clock):
     api_setup([{"status": "WAITING"}])

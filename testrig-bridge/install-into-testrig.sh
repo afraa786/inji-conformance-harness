@@ -17,8 +17,11 @@ package_dir="$destination/src/main/java/io/inji/testrig/apirig/inji$component/te
 mkdir -p "$package_dir" "$destination/testNgXmlFiles"
 cp -- "$source_dir/$component/OpenIDConformanceTest.java" "$package_dir/"
 cp -- "$source_dir/$component/inji${component}ConformanceSuite.xml" "$destination/testNgXmlFiles/"
+mkdir -p "$destination/src/main/java/io/inji/conformance/reporting"
+cp -- "$source_dir/reporting/ConformanceExtentListener.java" "$destination/src/main/java/io/inji/conformance/reporting/"
 echo "Installed $component adapter and TestNG XML."
 echo 'Keep Java 21. Add com.github.openjson:openjson:1.0.11 if absent.'
+echo 'Keep com.aventstack:extentreports:3.0.0 from apitest-commons; it powers the installed outcome listener.'
 echo "Include testNgXmlFiles/inji${component}ConformanceSuite.xml in the existing master TestNG suite."
 echo 'Keep the existing EmailableReport listener and configure conformance.root to the harness checkout.'
 echo 'Run with the real testrig bootstrap; standalone Maven does not provide the MOSIP report context.'

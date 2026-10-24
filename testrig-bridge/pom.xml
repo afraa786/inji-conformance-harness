@@ -13,6 +13,13 @@
     <conformance.reportsDirectory>${project.build.directory}/surefire-reports</conformance.reportsDirectory>
   </properties>
   <dependencies>
+    <!-- Same reporting API declared by the real apitest-commons 1.5.0 POM. -->
+    <dependency>
+      <groupId>com.aventstack</groupId>
+      <artifactId>extentreports</artifactId>
+      <version>3.0.0</version>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.testng</groupId>
       <artifactId>testng</artifactId>
@@ -35,7 +42,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.13.0</version>
         <configuration>
-          <testIncludes><testInclude>certify/**/*.java</testInclude><testInclude>verify/**/*.java</testInclude></testIncludes>
+          <testIncludes><testInclude>certify/**/*.java</testInclude><testInclude>verify/**/*.java</testInclude><testInclude>reporting/**/*.java</testInclude></testIncludes>
         </configuration>
       </plugin>
       <plugin>
@@ -47,6 +54,7 @@
           <reportsDirectory>${conformance.reportsDirectory}</reportsDirectory>
           <includes><include>**/OpenIDConformanceTest.java</include></includes>
           <failIfNoTests>true</failIfNoTests>
+          <properties><property><name>listener</name><value>io.inji.conformance.reporting.ConformanceExtentListener</value></property></properties>
         </configuration>
       </plugin>
     </plugins>
