@@ -56,6 +56,7 @@ public class OpenIDConformanceTest {
             setting("conformance.runner", "CONFORMANCE_RUNNER", "runner/conformance_runner.py"),
             "--component", COMPONENT, "--target", endpoint(), "--out", output.toString(),
             "--suite-url", setting("conformance.suiteUrl", "SUITE_URL", "https://localhost:8443"),
+            "--waiting-timeout-seconds", setting("conformance.waitingTimeoutSeconds", "WAITING_TIMEOUT_SECONDS", "120"),
             "--expected-failures", setting("conformance.expectedFailures", "CONFORMANCE_EXPECTED_FAILURES",
                 "runner/expected-failures-" + COMPONENT + ".json")));
         String plan = setting("conformance.plan", "CONFORMANCE_PLAN", "");

@@ -10,6 +10,7 @@
     <!-- Both reference api-test/pom.xml files require Java 21. -->
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <conformance.reportsDirectory>${project.build.directory}/surefire-reports</conformance.reportsDirectory>
   </properties>
   <dependencies>
     <dependency>
@@ -43,6 +44,7 @@
         <version>3.5.2</version>
         <configuration>
           <!-- Standalone has no api-testrig EmailableReport listener. Installed XML retains it. -->
+          <reportsDirectory>${conformance.reportsDirectory}</reportsDirectory>
           <includes><include>**/OpenIDConformanceTest.java</include></includes>
           <failIfNoTests>true</failIfNoTests>
         </configuration>

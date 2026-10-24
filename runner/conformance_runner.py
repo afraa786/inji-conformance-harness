@@ -195,13 +195,16 @@ def run_module(api, plan_id, module, handoff, args, output_dir):
             if last_state == "WAITING":
                 waiting_since = waiting_since if waiting_since is not None else time.monotonic()
                 if time.monotonic() - waiting_since >= args.waiting_timeout_seconds:
-                    record["detail"] = "WAITING timeout: browser/wallet action was not completed"
+                    record["detail"] = ("WAITING timeout: suite requires screenshot review; actual Verify result is saved"
+                                        if context.get("pendingEvidence") and context.get("verification") else
+                                        "WAITING timeout: browser/wallet action was not completed")
                     timed_out = True
                     break
                 # /api/info is persisted; live browser/exposed values come from /api/runner.
                 live = api.request("GET", "/api/runner/" + rid)
                 if not isinstance(live, dict):
                     raise RunnerError("Suite returned invalid live runner information")
+                context["pendingEvidence"] = bool(live.get("browser", {}).get("uploadsRequired", 0))
                 if handoff.drive(api, live, context):
                     waiting_since = time.monotonic()
             else:
@@ -220,6 +223,7 @@ def run_module(api, plan_id, module, handoff, args, output_dir):
         record["duration"] = round(time.monotonic() - start, 3)
     if context.get("verifyOutcome"):
         record["verifyOutcome"] = context["verifyOutcome"]
+        record["pendingEvidence"] = context.get("pendingEvidence", False)
     if context.get("verification") and rid:
         write_results(output_dir / (rid + "-verify-result.json"), context["verification"])
     try:
