@@ -1,4 +1,5 @@
 # Inji conformance harness
+[![Architecture diagram of afraa786/inji-conformance-harness](https://gitdiagram.com/afraa786/inji-conformance-harness/diagram.png)](https://gitdiagram.com/afraa786/inji-conformance-harness?utm_source=readme&utm_medium=picture)
 
 Python is the REST driver; Java 21 TestNG adapters invoke it as a subprocess.
 The implementation follows the OpenID suite's `scripts/conformance.py` and
