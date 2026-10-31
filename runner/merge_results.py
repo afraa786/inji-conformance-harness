@@ -42,7 +42,7 @@ def main() -> int:
     output = dict(component="combined", runs=runs, summary=summary, modules=modules, errors=errors, exitCode=exit_code)
     try:
         policy = load_policy(os.environ.get("BENCHMARK_CONFIG", str(DEFAULT_CONFIG)))
-        duration = sum(durations) if len(durations) == 2 and all(isinstance(d, (int, float)) for d in durations) else None
+        duration = sum(durations) if len(durations) == 2 and all(isinstance(d, (int, float)) and not isinstance(d, bool) for d in durations) else None
         output["durationSeconds"] = duration
         output["benchmark"] = evaluate("combined", duration, modules, policy)
         output["componentBenchmarks"] = component_benchmarks

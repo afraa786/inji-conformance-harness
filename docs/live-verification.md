@@ -1,6 +1,20 @@
 # Observed live verification
 
-## 2026-10-31 final validation
+## 2026-10-31 critical-blocker follow-up (current)
+
+The current `inji-blocker-resolution` project deploys the reviewed Certify and
+Verify native patches and immutable suite release-v5.3.4. All six services were
+healthy at inspection. Full Certify: 0 passed, 12 interrupted, 1 warning, 1 skipped.
+Full Verify: 5 passed, 7 failed awaiting genuine frontend screenshot evidence.
+Combined: 5 passed, 7 failed, 12 interrupted, 1 warning, 1 skipped; exit 1.
+Regression tests: 90 passed, no failures or skips. These are not conformance passes.
+Native live verification rejects revoked credentials with CREDENTIAL_REVOKED and
+unavailable status with STATUS_UNAVAILABLE. The conventional authorization flow
+and frontend evidence/review remain blocked. See
+[blocker investigation](blocker-resolution.md) and
+[current report](../artifacts/demo/final-validation-report.md).
+
+## Earlier 2026-10-31 validation (historical)
 
 The patched Certify release is now deployed in the separate
 `inji-final-validation` Compose project; all six backend services are healthy.

@@ -163,8 +163,8 @@ def main():
             execute("docker-services", ["docker", "compose", "ps", "-a"])
             execute("gateway-metadata", [sys.executable, "tools/final_validation_probe.py", "--out", str(EVIDENCE / "endpoint-probes-recorded.json")])
         for component in (() if args.reports_only else ("certify", "verify", "combined")):
-            args = ["--combined"] if component == "combined" else ["--component", component]
-            execute(component, [bash, "run-full-stack-conformance.sh"] + args + ["--no-up"])
+            component_args = ["--combined"] if component == "combined" else ["--component", component]
+            execute(component, [bash, "run-full-stack-conformance.sh"] + component_args + ["--no-up"])
             snapshot = EVIDENCE / component
             snapshot.mkdir(exist_ok=True)
             for path in (ROOT / "results").glob("*.*"):

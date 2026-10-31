@@ -16,6 +16,8 @@ on:
       - 'testrig-bridge/**'
       - 'tools/**'
       - 'docker-compose.yml'
+      - 'docker-compose.*.yml'
+      - 'patches/**'
       - 'requirements.txt'
       - 'run-full-stack-conformance.sh'
       - '.github/workflows/full-stack-conformance.yml'

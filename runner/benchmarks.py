@@ -8,7 +8,7 @@ DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "configs/benchmark-thresh
 
 def load_policy(path):
     policy = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(policy, dict) or set(policy) != {"schemaVersion", "components", "combined"} or policy["schemaVersion"] != 1:
+    if not isinstance(policy, dict) or set(policy) != {"schemaVersion", "components", "combined"} or type(policy["schemaVersion"]) is not int or policy["schemaVersion"] != 1:
         raise ValueError("Invalid benchmark schema")
     components = policy["components"]
     if not isinstance(components, dict) or set(components) != {"certify", "verify"}:

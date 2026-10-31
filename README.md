@@ -17,6 +17,12 @@ The 2026-10-31 deployment and recorded validation are documented in
 That run uses an explicitly derived Certify image containing the reviewed
 unsigned-metadata fallback. The existing upstream AS/suite mismatch remains.
 
+The critical-blocker follow-up adds native Verify metadata/status fixes and a
+pullable immutable suite release. Latest full results: Certify 0 passed,
+12 interrupted, 1 warning, 1 skipped; Verify 5 passed, 7 failed on frontend evidence.
+The project is **not acceptance-ready**. See [blocker resolution](docs/blocker-resolution.md).
+Execution-time gates are configurable; null defaults mean NOT_CONFIGURED.
+
 ## Setup
 
 Use Python 3.10+ (CI uses 3.12), Java 21, Maven, Docker Compose v2, and bash/Git

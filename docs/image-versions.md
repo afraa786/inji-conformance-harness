@@ -1,5 +1,16 @@
 # Inji image verification
 
+Current critical-blocker validation uses official suite release-v5.3.4 pinned to
+`sha256:dcc4bd1fb7e9c00f048a67373fe2bec5ecf9feb45a6b5d55e237e5c30e5312c6`
+and matching nginx
+`sha256:9a7850826fcc8690cd43373528f50e9551ba33bf8e4a40b67b13267b0aca3675`.
+Both public linux/amd64 and linux/arm64 manifests were verified and pulled.
+Reviewed derived native images are built by `tools/prepare_native_images.py`;
+`results/derived-image-provenance.json` records base/source/output hashes.
+This restores local pullability; no new remote CI run has validated these changes.
+See [blocker investigation](blocker-resolution.md). The older observations below
+are retained as historical evidence.
+
 Verified on 2026-10-23 using read-only local Git inspection and official upstream
 release/tagged Helm and Docker Hub metadata. The actual images were subsequently pulled and started locally; see docs/live-verification.md.
 

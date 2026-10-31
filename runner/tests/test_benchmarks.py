@@ -50,6 +50,16 @@ def test_configured_missing_measurement_fails_closed():
         evaluate("combined", None, [], policy)
 
 
+@pytest.mark.parametrize("version", [True, 1.0, "1"])
+def test_schema_version_is_explicit_integer(tmp_path, version):
+    policy = load_policy(DEFAULT_CONFIG)
+    policy["schemaVersion"] = version
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(policy))
+    with pytest.raises(ValueError):
+        load_policy(path)
+
+
 def test_combined_budget_fails_process_without_altering_conformance(tmp_path):
     root = tmp_path / "results"
     root.mkdir()
