@@ -1,6 +1,12 @@
 name: Full stack conformance
 on:
   workflow_dispatch:
+    inputs:
+      benchmark_thresholds_json:
+        description: 'Optional approved benchmark policy JSON; blank uses configs/benchmark-thresholds.json'
+        required: false
+        type: string
+        default: ''
   schedule:
     - cron: '30 1 * * 1'
   pull_request:
@@ -40,6 +46,8 @@ jobs:
           if-no-files-found: error
   conformance:
     needs: unit
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.native-fixes.yml
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -59,8 +67,31 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - name: Prepare real release configuration and ephemeral development keys
         run: python runner/prepare_local.py
+      - name: Build reviewed native release fixes
+        run: python tools/prepare_native_images.py
+      - name: Test native signed status checking and DTO persistence
+        run: python -m pytest runner/tests/test_token_status_list.py -q -rs --junitxml=results/native-status-tests.xml
       - name: Validate Compose
         run: docker compose config --quiet
+      - name: Apply explicitly supplied benchmark budgets
+        env:
+          BENCHMARK_THRESHOLDS_JSON: ${{ inputs.benchmark_thresholds_json || '' }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from runner.benchmarks import load_policy
+          value = os.environ.get('BENCHMARK_THRESHOLDS_JSON', '')
+          if value.strip():
+              path = Path('local/benchmark-thresholds.json')
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(json.dumps(json.loads(value)), encoding='utf-8')
+              load_policy(path)
+              with open(os.environ['GITHUB_ENV'], 'a') as output:
+                  output.write('BENCHMARK_CONFIG=' + str(path.resolve()) + '\n')
+          else:
+              load_policy('configs/benchmark-thresholds.json')
+          PY
       - name: Run real conformance plans
         id: real-run
         shell: bash

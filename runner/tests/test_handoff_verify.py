@@ -64,6 +64,21 @@ def test_valid_dcql_handoff_and_real_result_contract(setup):
     api.session.close()
 
 
+@responses.activate
+def test_native_client_metadata_is_forwarded_unchanged(setup):
+    response = created()
+    metadata = {"vp_formats_supported": {"dc+sd-jwt": {"sd-jwt_alg_values": ["ES256"], "kb-jwt_alg_values": ["ES256"]}}}
+    response["authorizationDetails"]["clientMetadata"] = metadata
+    responses.add(responses.POST, HOST + "/v2/vp-request", json=response, status=201)
+    responses.add(responses.GET, SUITE + "/authorize", body="captured")
+    handoff = instance(setup)
+    api = SuiteAPI(SUITE, handoff.deadline)
+    assert handoff.drive(api, {"browser": {"uriInputRequests": [{"submitUrl": SUITE + "/authorize"}]}}, {})
+    params = parse_qs(urlsplit(responses.calls[1].request.url).query)
+    assert json.loads(params["client_metadata"][0]) == metadata
+    api.session.close()
+
+
 @pytest.mark.parametrize("payload", [[], {}, {"presentationDefinition": {}}, {"dcql_query": QUERY},
     {"dcqlQuery": {"credentials": []}}, {"dcqlQuery": QUERY, "clientId": "wrong-client"},
     {"dcqlQuery": QUERY, "nonce": "short"}, {"dcqlQuery": QUERY, "responseCodeValidationRequired": True}])

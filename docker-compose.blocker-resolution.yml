@@ -1,0 +1,8 @@
+# Separate deployment; stop other harness projects before reusing their volumes.
+services:
+  verify:
+    image: inji-verify-status-metadata:validation-v2
+  server:
+    image: registry.gitlab.com/openid/conformance-suite@sha256:dcc4bd1fb7e9c00f048a67373fe2bec5ecf9feb45a6b5d55e237e5c30e5312c6
+  httpd:
+    image: registry.gitlab.com/openid/conformance-suite/nginx@sha256:9a7850826fcc8690cd43373528f50e9551ba33bf8e4a40b67b13267b0aca3675

@@ -43,6 +43,11 @@ def write_report(path, output):
         lines.append("| " + module["name"].replace("|", "\\|") + " | " + module["status"] + " | " + str(module.get("duration", 0)) + " |")
     if output["errors"]:
         lines += ["", "Infrastructure errors:", ""] + ["- " + message for message in output["errors"]]
+    if output.get("benchmark"):
+        lines += ["", "Benchmark: " + output["benchmark"]["status"]]
+        for check in output["benchmark"]["checks"]:
+            lines.append("- {} {}: {}s <= {}s: {}".format(check["subject"], check["metric"],
+                         check["measuredSeconds"], check["limitSeconds"], check["status"]))
     lines += ["", "REVIEW/SKIPPED do not establish conformance. See JSON and private evidence logs for details."]
     report.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -269,6 +274,8 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    execution_start = time.monotonic()
+    policy = None
     from datetime import datetime, timezone
     import uuid
     output = dict(component=args.component, planId=None, modules=[], summary={}, errors=[],
@@ -276,6 +283,11 @@ def main(argv=None):
     api, exit_code = None, 2
     try:
         read_env()
+        try:
+            from .benchmarks import load_policy, DEFAULT_CONFIG
+        except ImportError:
+            from benchmarks import load_policy, DEFAULT_CONFIG
+        policy = load_policy(os.environ.get("BENCHMARK_CONFIG", str(DEFAULT_CONFIG)))
         args.suite_url = args.suite_url or os.environ.get("SUITE_URL", "https://localhost:8443")
         if any(not math.isfinite(v) or v <= 0 for v in (args.timeout_minutes, args.module_timeout_seconds,
                                                        args.waiting_timeout_seconds, args.poll_interval)):
@@ -347,6 +359,21 @@ def main(argv=None):
         exit_code = 2
     finally:
         output["finishedAt"] = datetime.now(timezone.utc).isoformat()
+        output["durationSeconds"] = round(time.monotonic() - execution_start, 3)
+        output["conformanceExitCode"] = exit_code
+        if policy is not None:
+            try:
+                try:
+                    from .benchmarks import evaluate
+                except ImportError:
+                    from benchmarks import evaluate
+                output["benchmark"] = evaluate(args.component, output["durationSeconds"], output["modules"], policy)
+                if output["benchmark"]["status"] == "FAILED" and exit_code == 0:
+                    exit_code = 1
+                print("Benchmark " + args.component + ": " + output["benchmark"]["status"], flush=True)
+            except ValueError:
+                output["errors"].append("Invalid benchmark execution measurements")
+                exit_code = 2
         if api:
             api.session.close()
         output["summary"] = {s.lower(): sum(m["status"] == s for m in output["modules"]) for s in sorted(STATUSES)}

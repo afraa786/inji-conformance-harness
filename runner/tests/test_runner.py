@@ -262,3 +262,20 @@ def test_malformed_browser_state_is_reported_as_infrastructure(inputs, tmp_path,
     assert runner.main(inputs) == 2
     result = json.loads((tmp_path / "results.json").read_text())
     assert result["modules"][0]["infrastructureError"] is True
+
+
+@responses.activate
+def test_configured_benchmark_fails_even_when_protocol_passes(inputs, tmp_path, clock, monkeypatch):
+    from runner.benchmarks import load_policy, DEFAULT_CONFIG
+    policy = load_policy(DEFAULT_CONFIG)
+    policy["components"]["certify"]["max_run_seconds"] = 0
+    path = tmp_path / "budgets.json"
+    path.write_text(json.dumps(policy))
+    monkeypatch.setenv("BENCHMARK_CONFIG", str(path))
+    api_setup([{"status": "CREATED"}, {"status": "FINISHED", "result": "PASSED"}])
+    assert runner.main(inputs) == 1
+    output = json.loads((tmp_path / "results.json").read_text())
+    assert output["conformanceExitCode"] == 0
+    assert output["modules"][0]["status"] == "PASSED"
+    assert output["benchmark"]["status"] == "FAILED"
+    assert output["durationSeconds"] == 1

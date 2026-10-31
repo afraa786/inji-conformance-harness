@@ -19,6 +19,7 @@ except ImportError:
 POSITIVE_MODULES = {
     "oid4vp-1final-verifier-happy-flow", "oid4vp-1final-verifier-minimal-cnf-jwk",
     "oid4vp-1final-verifier-request-uri-method-post", "oid4vp-1final-verifier-request-uri-fetched-twice",
+    "oid4vp-1final-verifier-present-credential-without-status",
 }
 
 
@@ -134,6 +135,10 @@ class VerifyHandoff:
                    "responseUri": "response_uri", "nonce": "nonce", "dcqlQuery": "dcql_query"}
         params = {dst: json.dumps(details[src]) if isinstance(details[src], dict) else details[src]
                   for src, dst in mapping.items()}
+        if "clientMetadata" in details:
+            if not isinstance(details["clientMetadata"], dict):
+                raise RunnerError("Verify returned invalid clientMetadata")
+            params["client_metadata"] = json.dumps(details["clientMetadata"])
         params["state"] = created["requestId"]
         submit = inputs[0].get("submitUrl")
         if not isinstance(submit, str):

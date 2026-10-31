@@ -1,0 +1,6 @@
+# Explicit derived images, never represented as unmodified upstream releases.
+services:
+  certify:
+    image: inji-certify-unsigned-metadata:validation
+  verify:
+    image: inji-verify-status-metadata:validation-v2

@@ -89,7 +89,9 @@ public class OpenIDConformanceTest {
         Assert.assertEquals(results.getJSONArray("errors").length(), 0, "Runner reported infrastructure errors");
         JSONArray modules = results.getJSONArray("modules");
         Assert.assertTrue(modules.length() > 0, "No conformance modules ran");
-        Object[][] data = new Object[modules.length()][3];
+        JSONObject benchmark = results.optJSONObject("benchmark");
+        boolean benchmarkEvaluated = benchmark != null && !"NOT_CONFIGURED".equals(benchmark.optString("status"));
+        Object[][] data = new Object[modules.length() + (benchmarkEvaluated ? 1 : 0)][3];
         boolean unexpectedFailure = false;
         for (int i = 0; i < modules.length(); i++) {
             JSONObject module = modules.getJSONObject(i);
@@ -97,6 +99,13 @@ public class OpenIDConformanceTest {
             data[i][1] = module.getString("status");
             data[i][2] = module.optString("detail", "") + " " + module.optString("logUrl", "");
             unexpectedFailure |= List.of("FAILED", "INTERRUPTED").contains(data[i][1]);
+        }
+        if (benchmarkEvaluated) {
+            int index = modules.length();
+            data[index][0] = COMPONENT + " execution-time benchmark";
+            data[index][1] = benchmark.getString("status");
+            data[index][2] = benchmark.toString();
+            unexpectedFailure |= "FAILED".equals(data[index][1]);
         }
         Assert.assertEquals(process.exitValue(), unexpectedFailure ? 1 : 0, "Runner exit/result mismatch");
         return data;

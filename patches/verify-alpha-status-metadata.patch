@@ -1,0 +1,30 @@
+--- a/verify-service/src/main/java/io/inji/verify/dto/authorizationrequest/AuthorizationRequestResponseDto.java
++++ b/verify-service/src/main/java/io/inji/verify/dto/authorizationrequest/AuthorizationRequestResponseDto.java
+@@ -34,4 +34,11 @@
+     @Getter(onMethod_ = @JsonIgnore)
+     private final boolean acceptVPWithoutHolderProof;
+     private final boolean responseCodeValidationRequired;
++    /** Conservative SD-JWT profile: proven ES256 issuer and holder verification. */
++    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
++    public java.util.Map<String,Object> getClientMetadata() {
++        return java.util.Map.of("vp_formats_supported", java.util.Map.of("dc+sd-jwt",
++            java.util.Map.of("sd-jwt_alg_values", java.util.List.of("ES256"),
++                             "kb-jwt_alg_values", java.util.List.of("ES256"))));
++    }
+ }
+\ No newline at end of file
+--- a/verify-service/src/main/java/io/inji/verify/services/impl/VCVerificationServiceImpl.java
++++ b/verify-service/src/main/java/io/inji/verify/services/impl/VCVerificationServiceImpl.java
+@@ -96,6 +96,12 @@
+             claims = request.isIncludeClaims() ? extractClaims(verifiableCredential, format, claimsWithMetaData, pixelPass) : Map.of();
+         }
+ 
++        // Supplement vcverifier 1.9.0's unsupported SD-JWT status path.
++        if (schemaAndSignatureCheck.isValid() && !skipStatusChecks && statusCheck.isEmpty()
++                && (format == CredentialFormat.DC_SD_JWT || format == CredentialFormat.VC_SD_JWT)) {
++            statusCheck = TokenStatusListChecker.check(verifiableCredential);
++        }
++
+         boolean allChecksSuccessful = populateAllChecksSuccessful(schemaAndSignatureCheck, expiryCheck, statusCheck, null);
+ 
+         return new VCVerificationResultDto(allChecksSuccessful, schemaAndSignatureCheck, expiryCheck, statusCheck, claims);
