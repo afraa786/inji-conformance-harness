@@ -5,6 +5,10 @@ __pycache__/
 *.pyc
 .local-deps/
 .pytest_cache/
+
+# Final validation raw suite exports may contain private test material.
+artifacts/demo/evidence/
+artifacts/demo/recording/
 testrig-bridge/target/
 ".pytest_cache/" 
 '.local-deps/' 

@@ -12,6 +12,11 @@ plans do not pass.** Certify's native AS/IAR contract and the suite's screenshot
 review requirement remain blockers. See [actual verification](docs/live-verification.md),
 [handoff evidence](docs/component-handoff.md), and [image evidence](docs/image-versions.md).
 
+The 2026-10-31 deployment and recorded validation are documented in
+[the final validation report](artifacts/demo/final-validation-report.md).
+That run uses an explicitly derived Certify image containing the reviewed
+unsigned-metadata fallback. The existing upstream AS/suite mismatch remains.
+
 ## Setup
 
 Use Python 3.10+ (CI uses 3.12), Java 21, Maven, Docker Compose v2, and bash/Git
@@ -172,8 +177,10 @@ Raw suite exports/logs can contain private test credentials. Review before shari
 The CI workflow runs unit tests plus real certify, verify and combined jobs,
 generates ephemeral development fixtures, retains nonzero exits, uploads reports
 and diagnostics even after failure, and posts Markdown to the job summary.
-CI has not been executed remotely in this session; its failure path was exercised
-locally. Current real conformance failures mean those jobs should be red.
+The latest inspected remote run, 40281698859, passed its unit job but failed
+conformance startup because the registry did not serve the pinned suite manifest.
+The final local validation used the retained cached image; no new remote run was
+triggered for these uncommitted changes. Actual conformance failures also remain.
 
 Optional MinIO upload uses `runner/upload_results.py` and
 `requirements-upload.txt`, bucket `automationtests`, with all three
@@ -187,18 +194,24 @@ preserve each module result and fail the build appropriately. Examples, run from
 the harness root:
 
 ```bash
-mvn -f testrig-bridge/pom.xml test -Dtest=io.inji.testrig.apirig.injicertify.testscripts.OpenIDConformanceTest -Dconformance.root="$PWD" -Denv.endpoint=https://certify.test:8446 -Dconformance.results=results/bridge/results-certify.json -Dconformance.waitingTimeoutSeconds=5
-mvn -f testrig-bridge/pom.xml test -Dtest=io.inji.testrig.apirig.injiverify.testscripts.OpenIDConformanceTest -Dconformance.root="$PWD" -Denv.endpoint=https://verify.test:8447/v1/verify -Dconformance.results=results/bridge/results-verify.json -Dconformance.waitingTimeoutSeconds=5
+mvn -f testrig-bridge/pom.xml test -Dconformance.buildDirectory="$PWD/local/bridge-build" -Dtest=io.inji.testrig.apirig.injicertify.testscripts.OpenIDConformanceTest -Dconformance.root="$PWD" -Denv.endpoint=https://certify.test:8446 -Dconformance.results=results/bridge/results-certify.json -Dconformance.waitingTimeoutSeconds=5
+mvn -f testrig-bridge/pom.xml test -Dconformance.buildDirectory="$PWD/local/bridge-build" -Dtest=io.inji.testrig.apirig.injiverify.testscripts.OpenIDConformanceTest -Dconformance.root="$PWD" -Denv.endpoint=https://verify.test:8447/v1/verify -Dconformance.results=results/bridge/results-verify.json -Dconformance.waitingTimeoutSeconds=5
 ```
 
 Properties include `conformance.python`, `conformance.runner`, `conformance.root`,
 `conformance.target`, `conformance.results`, `conformance.suiteUrl`,
 `conformance.plan`, `conformance.expectedFailures`, `conformance.waitingTimeoutSeconds`,
-and `conformance.reportsDirectory`. The target resolver uses `env.endpoint`, the
+`conformance.buildDirectory`, and `conformance.reportsDirectory`. Use a separate
+build directory when an IDE also manages `target`; existing output need not be
+cleaned. Child output is retained in `runner-certify.log` / `runner-verify.log`
+beside normalized results, rather than inherited native stdout that can corrupt
+Surefire's channel. The target resolver uses `env.endpoint`, the
 real ConfigManager when available, then `ENV_ENDPOINT`. The bridge rejects stale,
 empty or infrastructure-error results.
 
-Standalone Maven uses TestNG's reports, not MOSIP Extent. To install into a
+Standalone Maven generates TestNG reports and `conformance-extent.html` through
+the bridge's Extent listener. This does not verify the full MOSIP reporting
+bootstrap. To install into a
 **writable** real api-testrig checkout:
 
 ```bash
@@ -208,9 +221,9 @@ bash testrig-bridge/install-into-testrig.sh /path/to/writable/inji-verify verify
 
 Include the installed XML in the real master suite and use its existing bootstrap
 and `EmailableReport` listener. Add OpenJSON 1.0.11 if absent. `Reporter.log` is
-preserved for those hooks. Extent integration has not been observed here because
-the standalone POM does not provide that framework runtime. Reference folders
-remain read-only; the installer refuses them.
+preserved for those hooks. The standalone ExtentReports 3 listener is separate
+from the full MOSIP reporting runtime, whose installed bootstrap remains
+unverified. Reference folders remain read-only; the installer refuses them.
 
 `.local-deps/` remains ignored and `git ls-files .local-deps` returned no files.
 No dependencies were deleted. No commit or push is performed by these tools.

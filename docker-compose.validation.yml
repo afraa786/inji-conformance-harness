@@ -1,0 +1,15 @@
+# Run with --project-name inji-final-validation. Original containers stay intact.
+# Existing volumes are deliberately reused; do not run both projects together.
+services:
+  certify:
+    image: inji-certify-unsigned-metadata:validation
+volumes:
+  postgres-data:
+    external: true
+    name: ${VALIDATION_POSTGRES_VOLUME:-inji-conformance-harness_postgres-data}
+  mongodb-data:
+    external: true
+    name: ${VALIDATION_MONGODB_VOLUME:-inji-conformance-harness_mongodb-data}
+  certify-keys:
+    external: true
+    name: ${VALIDATION_CERTIFY_KEYS_VOLUME:-inji-conformance-harness_certify-keys}

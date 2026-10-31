@@ -27,6 +27,6 @@
 - **Python dependencies:** prefer Python 3.10+ and install requirements.txt.
   If using retained `.local-deps`, export PYTHONPATH to its absolute path.
   `git ls-files .local-deps` should print nothing; ignored files remain on disk.
-- **Java reports:** the standalone POM emits TestNG reports. Extent requires
-  the real MOSIP testrig bootstrap and listener; standalone results cannot
-  demonstrate that integration.
+- **Java reports:** the standalone POM emits TestNG and bridge Extent reports.
+  The full MOSIP reporting bootstrap remains a separate, unverified integration;
+  standalone Extent output does not establish that integration.

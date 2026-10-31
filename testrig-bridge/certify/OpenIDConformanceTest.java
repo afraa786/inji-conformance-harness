@@ -65,7 +65,12 @@ public class OpenIDConformanceTest {
                 "runner/expected-failures-" + COMPONENT + ".json")));
         String plan = setting("conformance.plan", "CONFORMANCE_PLAN", "");
         if (!plan.isBlank()) command.addAll(List.of("--plan", plan));
-        Process process = new ProcessBuilder(command).directory(root.toFile()).inheritIO().start();
+        // Native inherited stdout bypasses Surefire's Java stream framing.
+        // Retain the real child output without corrupting its control channel.
+        Path runnerLog = output.resolveSibling("runner-" + COMPONENT + ".log");
+        Process process = new ProcessBuilder(command).directory(root.toFile())
+            .redirectErrorStream(true).redirectOutput(runnerLog.toFile()).start();
+        Reporter.log("Python runner output retained at " + runnerLog, true);
         try {
             if (!process.waitFor(65, TimeUnit.MINUTES)) {
                 process.destroyForcibly();

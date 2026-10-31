@@ -1,5 +1,27 @@
 # Observed live verification
 
+## 2026-10-31 final validation
+
+The patched Certify release is now deployed in the separate
+`inji-final-validation` Compose project; all six backend services are healthy.
+Original containers and volumes were retained. CA-verified requests through the
+actual gateway/security chain confirm unsigned JSON fallback for JWT-only Accept.
+The affected signed-metadata test is genuinely SKIPPED, not PASSED.
+
+Fresh complete runs: Certify 14 modules (12 INTERRUPTED, 1 WARNING, 1 SKIPPED),
+Verify 12 modules (12 FAILED), combined 26 modules (12 FAILED, 12 INTERRUPTED,
+1 WARNING, 1 SKIPPED); all full-mode exits are 1. No module is PASSED.
+Final Java adapters reproduce these outcomes in TestNG and standalone Extent,
+after isolating compiler output and retaining child output outside Surefire's
+native control stream. Python automation: 55 passed, no skips.
+
+The latest inspected remote CI run 40281698859 failed to pull the pinned suite
+manifest; local execution used the retained cached image. No new remote run was
+triggered. See [final validation report](../artifacts/demo/final-validation-report.md)
+for current evidence, remaining protocol failures, and the genuine recording.
+
+## Historical verification (2026-10-24)
+
 These are actual local executions against the alpha images, not unit fixtures.
 The latest consolidated artifacts are in ignored `results/`; rerunning replaces
 the root summaries while evidence is separated by plan ID.

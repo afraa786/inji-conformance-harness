@@ -11,6 +11,8 @@
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <conformance.reportsDirectory>${project.build.directory}/surefire-reports</conformance.reportsDirectory>
+    <!-- Allow validation to avoid IDE-managed/stale output without deleting it. -->
+    <conformance.buildDirectory>${project.basedir}/target</conformance.buildDirectory>
   </properties>
   <dependencies>
     <!-- Same reporting API declared by the real apitest-commons 1.5.0 POM. -->
@@ -35,6 +37,7 @@
     </dependency>
   </dependencies>
   <build>
+    <directory>${conformance.buildDirectory}</directory>
     <testSourceDirectory>${project.basedir}</testSourceDirectory>
     <plugins>
       <plugin>

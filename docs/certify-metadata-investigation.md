@@ -183,3 +183,29 @@ Only after that succeeds should the exact patched release be built into an
 explicit derived image and tested through the existing gateway/security config.
 The plugin-only Dockerfile inherits the unpatched official service image; building
 that Dockerfile alone would not deploy this controller fix.
+
+## Deployment verification, 2026-10-31
+
+Docker Engine 27.5.1 became available. `tools/build_certify_metadata.py` compiled
+the reviewed controller against the actual shipped alpha jar and replaced exactly
+one archive entry, `BOOT-INF/classes/io/mosip/certify/controller/WellKnownController.class`.
+Every other jar entry was compared byte-for-byte. Build provenance is saved in
+`artifacts/demo/evidence/certify-build-provenance.json`. The original jar, image,
+checkouts, containers, dependency caches, and data volumes were retained.
+
+The derived image `inji-certify-unsigned-metadata:validation` was deployed in the
+separate Compose project `inji-final-validation` with `docker-compose.validation.yml`.
+All six required services became healthy. A real CA-verified host request through
+the existing gateway returned HTTP 200, Content-Type application/json, and the
+same 2,037-byte metadata body for both JSON Accept and JWT-only Accept. See
+`artifacts/demo/evidence/endpoint-probes-recorded.json` for responses.
+
+The affected suite module was actually rerun: plan `FC5ZpxaHdMj25`, test
+`v3vLO3mgfNNHRFq`, result **SKIPPED**, runner exit 0. The suite now recognizes
+the genuine unsigned fallback and does not attempt JWT decoding. The plan export
+and actual request/response log are under
+`artifacts/demo/evidence/metadata-targeted/certify-evidence/FC5ZpxaHdMj25/`.
+This resolves the empty-body interruption, not signed metadata support or whole
+issuer conformance. Native AS discovery still lacks authorization_endpoint.
+
+See `artifacts/demo/final-validation-report.md` for the full runs and recording.
