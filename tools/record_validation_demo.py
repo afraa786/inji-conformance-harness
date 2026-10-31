@@ -92,7 +92,7 @@ def run(name, command, env):
 
 
 def main():
-    global LEDGER
+    global LEDGER, EVIDENCE
     from playwright.sync_api import sync_playwright
     import imageio_ffmpeg
     os.chdir(ROOT)
@@ -103,7 +103,11 @@ def main():
     parser.add_argument("--build-directory", default="local/final-validation/bridge-target-v2")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--ledger", default="demo-commands.json")
+    parser.add_argument("--evidence-root", default="artifacts/demo/evidence")
+    parser.add_argument("--project", default="inji-final-validation")
+    parser.add_argument("--compose", action="append", help="Compose files in order; repeat for overrides")
     args = parser.parse_args()
+    EVIDENCE = (ROOT / args.evidence_root).resolve()
     LEDGER = EVIDENCE / args.ledger
     read_env()
     EVIDENCE.mkdir(parents=True, exist_ok=True)
@@ -115,8 +119,9 @@ def main():
         STATE["outcomes"] = json.loads((EVIDENCE / "demo-commands.json").read_text())
         previous = json.loads((EVIDENCE / "combined/results-combined.json").read_text())
         STATE["summary"] = {"combined": previous["summary"]}
-    env = dict(os.environ, DOCKER_CONTEXT="desktop-linux", COMPOSE_PROJECT_NAME="inji-final-validation",
-               COMPOSE_FILE=str(ROOT / "docker-compose.yml") + os.pathsep + str(ROOT / "docker-compose.validation.yml"),
+    compose_files = args.compose or ["docker-compose.yml", "docker-compose.validation.yml"]
+    env = dict(os.environ, DOCKER_CONTEXT="desktop-linux", COMPOSE_PROJECT_NAME=args.project,
+               COMPOSE_FILE=os.pathsep.join(str(ROOT / name) for name in compose_files),
                COMPOSE_PATH_SEPARATOR=os.pathsep, WAITING_TIMEOUT_SECONDS="10",
                PYTHONPATH=str(ROOT / ".local-deps"), PYTHON=sys.executable)
     bash = "C:/Program Files/Git/bin/bash.exe"
@@ -156,7 +161,7 @@ def main():
         if not args.reports_only:
             execute("deployment-health", ["docker", "compose", "up", "-d", "--no-recreate", "--pull", "never", "--wait", "--wait-timeout", "120"])
             execute("docker-services", ["docker", "compose", "ps", "-a"])
-            execute("gateway-metadata", [sys.executable, "tools/final_validation_probe.py", "--out", "artifacts/demo/evidence/endpoint-probes-recorded.json"])
+            execute("gateway-metadata", [sys.executable, "tools/final_validation_probe.py", "--out", str(EVIDENCE / "endpoint-probes-recorded.json")])
         for component in (() if args.reports_only else ("certify", "verify", "combined")):
             args = ["--combined"] if component == "combined" else ["--component", component]
             execute(component, [bash, "run-full-stack-conformance.sh"] + args + ["--no-up"])
@@ -205,8 +210,9 @@ def main():
                          lines=["Metadata fallback: verified through real gateway with CA validation.",
                                 "Native AS: conventional authorization_endpoint absent; IAR is a different protocol.",
                                 "Verify: actual backend responses saved; suite failures/review remain visible.",
-                                "CI: latest remote run failed pulling the pinned suite image.",
-                                "Benchmark: status regression comparison; no performance benchmark.",
+                                "CI: prior remote run failed on the old pin; immutable release v5.3.4 is now verified locally.",
+                                "Execution-time budgets are configurable; unset limits are NOT_CONFIGURED, not performance passes.",
+                                "Revoked SD-JWT: native signed status checking added; genuine UI evidence/review still required.",
                                 "No test result was fabricated or weakened."])
         page.wait_for_timeout(12000)
         context.close()
