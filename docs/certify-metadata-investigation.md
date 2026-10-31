@@ -135,3 +135,51 @@ that controller already has a different versioned method signature. After Docker
 is restored, repeat only `oid4vci-1_0-issuer-metadata-test-signed` against that image
 and confirm unsigned JSON plus an actual suite SKIPPED outcome. Full issuance
 remains blocked by the separate AS/suite incompatibility. No E2E pass is claimed.
+
+## Exact-release checkout validation (follow-up)
+
+Created a separate official-tag clone in
+`local/certify-alpha-metadata-validation`; HEAD is exactly
+`8fdf71656979a72fa8263766d4dec3cc25127b76`. The original local/testrigs and
+reference checkouts were not patched. `git apply --check` passed, the patch was
+applied only in the new clone, and `git diff --check` passed. Its only modified
+path is `certify-service/src/main/java/io/mosip/certify/controller/WellKnownController.java`.
+The pristine controller matches the regression fixture byte-for-byte after LF
+normalization; the patched controller matches the source compiled by the fresh
+MVC test run. Patched SHA256:
+`1d1fbfbd10ff36e96a0a8736b80e8e5bd8234c22837cd831026d83e21b667b31`.
+
+The fresh command, with the environment variables above, was:
+
+```powershell
+python -m pytest runner/tests/test_certify_metadata_release.py -q -rs --basetemp=local/pytest-certify-release-validation --junitxml=results/certify-release-validation.xml
+```
+
+Result: **2 passed, no skips**. Additional provenance is retained in
+`results/certify-isolated-release-validation.json`. This is patch application and
+isolated controller regression validation, not a full release build.
+
+Rechecked the exact cloned release's AS DTO, metadata service and OAuthController.
+The service exposes only the interactive-authorization-endpoint property. The
+controller's `/oauth/iae` is a form POST returning IAR JSON, not a conventional
+browser authorization endpoint. Pinned suite `CheckServerConfiguration` still
+requires `authorization_endpoint`. A broader pinned-suite search could not finish
+because the reference is a partial clone and an uncached blob required an
+unavailable GitLab fetch; the specific required-endpoint class was read successfully.
+No new supported configuration-only solution was established.
+
+Docker was checked using the user's actual context: `desktop-linux`.
+`docker info --format '{{.ServerVersion}}'` failed because
+`//./pipe/dockerDesktopLinuxEngine` does not exist. Therefore no image build,
+deployment, real gateway/security-chain probe or conformance rerun was attempted.
+No TLS/browser enhancements were started. After Docker Desktop's Linux engine
+is available, the next readiness command is:
+
+```powershell
+docker --context desktop-linux info --format '{{.ServerVersion}}'
+```
+
+Only after that succeeds should the exact patched release be built into an
+explicit derived image and tested through the existing gateway/security config.
+The plugin-only Dockerfile inherits the unpatched official service image; building
+that Dockerfile alone would not deploy this controller fix.
