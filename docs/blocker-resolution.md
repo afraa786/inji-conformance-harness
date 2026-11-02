@@ -1,5 +1,11 @@
 # Critical blocker investigation and scoped fixes
 
+2026-11-02 follow-up: no external AS is provisioned, and the Docker Linux engine
+is currently unavailable. See [local external-AS assessment](external-as-assessment.md)
+for tagged eSignet/Keycloak candidates, discovery, clients/callbacks, protected
+storage and the remaining DPoP/grant-coordination gaps. Earlier live results below
+remain historical evidence; they were not rerun in this assessment.
+
 This project is not acceptance-ready. See the latest `artifacts/demo/final-validation-report.md`
 for exact full-plan counts. Passing harness tests and backend rejection are distinct
 from passing the suite's protocol and evidence requirements.

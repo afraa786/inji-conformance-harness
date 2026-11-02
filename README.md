@@ -1,4 +1,22 @@
 # Inji conformance harness
+
+Submission entry points: [current readiness report](artifacts/demo/final-submission-readiness.md),
+[final video](<artifacts/demo/Final Submission Video.mp4>),
+[architecture](docs/architecture.md), and [external-AS assessment](docs/external-as-assessment.md).
+The video labels retained execution evidence separately from current checks.
+Pitch presentation content is in [docs/submission-pitch.md](docs/submission-pitch.md);
+a rendered pitch deck still requires preparation.
+
+For Windows with the retained dependencies, use PowerShell from the repository root:
+
+```powershell
+$env:PYTHONPATH = Join-Path $PWD '.local-deps'
+python -m pytest runner/tests -q
+docker --context desktop-linux info --format '{{.ServerVersion}}'
+```
+
+Check Docker before attempting a live workflow. Use Git Bash for
+`run-full-stack-conformance.sh`; PowerShell does not interpret its Bash syntax.
 [![Architecture diagram of afraa786/inji-conformance-harness](https://gitdiagram.com/afraa786/inji-conformance-harness/diagram.png)](https://gitdiagram.com/afraa786/inji-conformance-harness?utm_source=readme&utm_medium=picture)
 
 Python is the REST driver; Java 21 TestNG adapters invoke it as a subprocess.
