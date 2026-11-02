@@ -1,0 +1,999 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Inji Conformance Harness — API Documentation</title><style>
+@page{size:A4;margin:20mm 16mm 18mm}*{box-sizing:border-box}
+body{font-family:"Segoe UI",Arial,sans-serif;color:#233247;font-size:10pt;line-height:1.48;margin:0}
+h1{font-size:27pt;color:#122c48;line-height:1.2;margin:8mm 0 5mm;border-bottom:4px solid #16a998;padding-bottom:5mm}
+h2{font-size:18pt;color:#123c5a;margin:4mm 0;break-before:page;break-after:avoid}
+h3{font-size:12pt;color:#145965;margin:6mm 0 2mm;break-after:avoid}
+p{margin:2.5mm 0}a{color:#145b93;text-decoration:none;overflow-wrap:anywhere}
+code{font-family:Consolas,"Courier New",monospace;font-size:8.4pt;overflow-wrap:anywhere;color:#203951}
+pre{background:#f0f5f9;border-left:3px solid #16a998;padding:3mm;white-space:pre-wrap;overflow-wrap:anywhere;font-size:8.4pt;line-height:1.38;break-inside:avoid}
+table{border-collapse:collapse;width:100%;font-size:8.8pt;margin:4mm 0;table-layout:fixed}
+th{text-align:left;background:#173b57;color:white;padding:2.5mm}td{border-bottom:1px solid #d7e1e9;vertical-align:top;padding:2.5mm;overflow-wrap:anywhere}
+thead{display:table-header-group}tr{break-inside:avoid}td code{font-size:8pt}
+ul,ol{padding-left:5mm}li{margin:1.6mm 0}.toc{background:#f4f8fa;border:1px solid #d7e1e9;padding:3mm 5mm;font-size:9pt}
+.toc ul{margin:1mm 0}.toc li{margin:.5mm 0}.brand{font-size:9pt;letter-spacing:2px;color:#157b75;margin-top:4mm}.notice{border:1px solid #cad9e5;padding:3mm;color:#435871;font-size:9pt;margin-top:5mm}
+</style></head><body><div class="brand">MOSIP DEC{}DE · TECHNICAL REFERENCE</div><h1 id="inji-conformance-harness-api-documentation">Inji Conformance Harness — API Documentation</h1>
+<p><strong>MOSIP DEC{}DE submission reference · 2 November 2026</strong></p>
+<p>This document describes the APIs used by the existing harness, their request and
+response formats, authentication boundaries, example use cases, and known gaps.
+It is based on the implementation and retained release evidence. Examples are
+sanitized contract illustrations, not new successful executions.</p>
+<p><strong>Status:</strong> the harness is an implemented testing prototype. Complete end-to-end
+protocol acceptance remains incomplete. The latest fresh harness regression run
+recorded 90 passes; this does not establish OpenID conformance. Docker-dependent
+APIs were not revalidated during this documentation export.</p>
+<div class="toc">
+<ul>
+<li><a href="#1-scope-and-implementation-ownership">1. Scope and implementation ownership</a></li>
+<li><a href="#2-addresses-routing-and-media-types">2. Addresses, routing and media types</a></li>
+<li><a href="#3-authentication-trust-and-sensitive-data">3. Authentication, trust and sensitive data</a><ul>
+<li><a href="#31-suite-api">3.1 Suite API</a></li>
+<li><a href="#32-certify">3.2 Certify</a></li>
+<li><a href="#33-verify">3.3 Verify</a></li>
+<li><a href="#34-storage-and-disclosure">3.4 Storage and disclosure</a></li>
+</ul>
+</li>
+<li><a href="#4-openid-suite-rest-api">4. OpenID suite REST API</a><ul>
+<li><a href="#41-create-a-test-plan">4.1 Create a test plan</a></li>
+<li><a href="#42-read-a-plan">4.2 Read a plan</a></li>
+<li><a href="#43-create-a-module-runner">4.3 Create a module runner</a></li>
+<li><a href="#44-start-and-observe-module-execution">4.4 Start and observe module execution</a></li>
+<li><a href="#45-logs-and-plan-export">4.5 Logs and plan export</a></li>
+</ul>
+</li>
+<li><a href="#5-certify-apis-and-offer-handoff">5. Certify APIs and offer handoff</a><ul>
+<li><a href="#51-health-and-discovery">5.1 Health and discovery</a></li>
+<li><a href="#52-create-pre-authorized-credential-data">5.2 Create pre-authorized credential data</a></li>
+<li><a href="#53-retrieve-an-offer">5.3 Retrieve an offer</a></li>
+<li><a href="#54-native-token-exchange">5.4 Native token exchange</a></li>
+<li><a href="#55-credential-issuance-boundary">5.5 Credential issuance boundary</a></li>
+</ul>
+</li>
+<li><a href="#6-verify-apis-and-dcql-presentation-flow">6. Verify APIs and DCQL presentation flow</a><ul>
+<li><a href="#61-create-a-backend-vp-request">6.1 Create a backend VP request</a></li>
+<li><a href="#62-relay-actual-authorization-details-to-the-suite">6.2 Relay actual authorization details to the suite</a></li>
+<li><a href="#63-submit-a-presentation">6.3 Submit a presentation</a></li>
+<li><a href="#64-poll-request-state">6.4 Poll request state</a></li>
+<li><a href="#65-retrieve-and-verify-results">6.5 Retrieve and verify results</a></li>
+<li><a href="#66-browser-session-apis-and-unfinished-ui-integration">6.6 Browser-session APIs and unfinished UI integration</a></li>
+<li><a href="#67-standalone-native-credential-verification-and-status-resolution">6.7 Standalone native credential verification and status resolution</a></li>
+</ul>
+</li>
+<li><a href="#7-example-use-cases">7. Example use cases</a><ul>
+<li><a href="#71-evaluate-the-api-contract-without-a-running-stack">7.1 Evaluate the API contract without a running stack</a></li>
+<li><a href="#72-trusted-local-health-request">7.2 Trusted local health request</a></li>
+<li><a href="#73-create-a-real-verify-request">7.3 Create a real Verify request</a></li>
+<li><a href="#74-run-full-diagnostic-workflows">7.4 Run full diagnostic workflows</a></li>
+<li><a href="#75-retrieve-results-using-the-python-http-contract">7.5 Retrieve results using the Python HTTP contract</a></li>
+</ul>
+</li>
+<li><a href="#8-timeouts-retries-and-error-handling">8. Timeouts, retries and error handling</a></li>
+<li><a href="#9-local-output-contract-and-build-exits">9. Local output contract and build exits</a></li>
+<li><a href="#10-known-limitations-and-current-evidence">10. Known limitations and current evidence</a></li>
+<li><a href="#11-source-and-documentation-index">11. Source and documentation index</a></li>
+</ul>
+</div>
+<h2 id="1-scope-and-implementation-ownership">1. Scope and implementation ownership</h2>
+<p>The Python runner is an <strong>API client and command-line tool</strong>, not a new REST
+server. There is no harness-owned HTTP port and no invented <code>/run-conformance</code>
+endpoint. The Java TestNG bridge launches Python as a subprocess. REST endpoints
+in this reference belong to the OpenID Foundation suite, Inji Certify, or Inji
+Verify. Application behavior must be checked against the selected release.</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Responsibility</th>
+<th>Main implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Suite REST client</td>
+<td>Create plans/modules, start and poll execution, collect logs and exports</td>
+<td><code>runner/conformance_runner.py</code></td>
+</tr>
+<tr>
+<td>Certify handoff</td>
+<td>Create native pre-authorized credential offer and pass its actual URI to suite</td>
+<td><code>runner/handoff_certify.py</code></td>
+</tr>
+<tr>
+<td>Verify handoff</td>
+<td>Create real DCQL request, relay authorization details, retrieve verification result</td>
+<td><code>runner/handoff_verify.py</code></td>
+</tr>
+<tr>
+<td>Inji HTTP client</td>
+<td>Separate trusted-TLS requests with deadlines and limited safe retries</td>
+<td><code>runner/common.py</code></td>
+</tr>
+<tr>
+<td>Configuration renderer</td>
+<td>Load literal environment inputs and render typed JSON plans</td>
+<td><code>runner/render_plans.py</code></td>
+</tr>
+<tr>
+<td>Reporting</td>
+<td>JSON/Markdown, per-plan evidence, TestNG and Extent</td>
+<td><code>runner/merge_results.py</code>, <code>testrig-bridge/</code></td>
+</tr>
+<tr>
+<td>Execution budgets</td>
+<td>Evaluate configured component/module/combined limits</td>
+<td><code>runner/benchmarks.py</code></td>
+</tr>
+</tbody>
+</table>
+<p>Reference versions:</p>
+<ul>
+<li>Certify: <code>v1.0.0-alpha.1</code>, source commit
+  <code>8fdf71656979a72fa8263766d4dec3cc25127b76</code>.</li>
+<li>Verify: <code>v1.0.0-alpha.1</code>, source commit
+  <code>4c4289026968beb535d3dbdd500947152c43f708</code>.</li>
+<li>Later retained suite execution: <code>release-v5.3.4</code>, source commit
+  <code>23353b36957d6466010de767c812d2c91ed37638</code>.</li>
+<li>Local derived images contain reviewed native metadata/status fixes. They must
+  not be described as unmodified upstream images.</li>
+</ul>
+<p>This is the harness integration surface, not an exhaustive catalogue of all
+upstream administration, issuance-plugin or account-management APIs.</p>
+<h2 id="2-addresses-routing-and-media-types">2. Addresses, routing and media types</h2>
+<table>
+<thead>
+<tr>
+<th>Purpose</th>
+<th>Host-facing address</th>
+<th>Advertised address inside the test deployment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Suite REST API</td>
+<td><code>https://localhost:8443</code></td>
+<td><code>https://suite.test:8443</code></td>
+</tr>
+<tr>
+<td>Certify API</td>
+<td><code>https://localhost:8446/v1/certify</code></td>
+<td><code>https://certify.test:8446/v1/certify</code></td>
+</tr>
+<tr>
+<td>Verify API</td>
+<td><code>https://localhost:8447/v1/verify</code></td>
+<td><code>https://verify.test:8447/v1/verify</code></td>
+</tr>
+</tbody>
+</table>
+<p>The issuer identifier is origin-only, <code>https://certify.test:8446</code>. The gateway
+maps root well-known requests to Certify's servlet path. Do not append a servlet
+path to issuer metadata merely to make routing work. Host callers use localhost;
+suite/container callbacks use their configured public DNS names.</p>
+<p>Common media types:</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Request / response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Suite API and most Inji APIs</td>
+<td><code>application/json</code></td>
+</tr>
+<tr>
+<td>Native token exchange and Verify direct-post</td>
+<td>Request <code>application/x-www-form-urlencoded</code></td>
+</tr>
+<tr>
+<td>Suite plan export</td>
+<td>Response <code>application/zip</code></td>
+</tr>
+<tr>
+<td>Signed issuer metadata when actually supported</td>
+<td><code>application/jwt</code></td>
+</tr>
+<tr>
+<td>Verify signed authorization request, outside selected unsigned profile</td>
+<td><code>application/oauth-authz-req+jwt</code></td>
+</tr>
+<tr>
+<td>Native JWT Token Status List checker</td>
+<td><code>application/statuslist+jwt</code></td>
+</tr>
+</tbody>
+</table>
+<p>Strings such as <code>&lt;plan-id&gt;</code>, <code>&lt;request-id&gt;</code> and <code>&lt;signed-token&gt;</code> below are
+documentation placeholders. They are not working credentials or valid tokens.
+Capture actual identifiers from responses; URL-encode path and query values.</p>
+<h2 id="3-authentication-trust-and-sensitive-data">3. Authentication, trust and sensitive data</h2>
+<h3 id="31-suite-api">3.1 Suite API</h3>
+<p><code>OIDC_SUITE_TOKEN</code>, when supplied, adds <code>Authorization: Bearer ...</code> to the suite
+session. The local dev-profile suite does not require that token. This does not
+establish production authentication policy. Never publish token values.</p>
+<p><code>OIDC_SUITE_INSECURE=false</code> is the normal setting. Python trusts the development
+CA through <code>REQUESTS_CA_BUNDLE=./local/tls/ca.crt</code>. An explicit insecure setting
+affects only the isolated suite session; it must not be treated as a normal
+deployment requirement or proof of TLS correctness.</p>
+<p>The suite session refuses unapproved origins, does not follow redirects, and
+translates the configured public suite origin into the host-facing URL. Suite
+credentials must not be forwarded to Certify, Verify or arbitrary callback hosts.</p>
+<h3 id="32-certify">3.2 Certify</h3>
+<p>The local fixture permits selected development endpoints, including discovery,
+pre-authorized-data and OAuth routes. These fixture permissions are not a
+production access-control guarantee. Credential issuance additionally uses the
+native access-token validation path.</p>
+<p>The inspected non-local Certify filter requires a Bearer JWT and validates
+signature, issuer, audience, subject, <code>client_id</code>, issue time and expiry. The
+issuance service also requires a credential-mapped scope and valid holder proof.
+Do not disable those checks to demonstrate issuance.</p>
+<p>No external AS or registered external clients are provisioned. Native IAR is not
+a conventional external authorization endpoint. Resource-side DPoP proof validation
+remains an implementation gap; a DPoP-bound token cannot safely be accepted as an
+unchecked Bearer token.</p>
+<h3 id="33-verify">3.3 Verify</h3>
+<p>The selected development REST handoff does not attach an OAuth bearer credential
+to Verify. HTTPS trust is still required. Browser session APIs use actual service
+cookies and their configured security attributes. Request/transaction identifiers
+are correlation values, not a substitute for production access control.</p>
+<p>The suite supplies signed synthetic presentation material. Native Verify validates
+the submitted presentation and credentials. Do not replace signed values, skip
+status checks, or rewrite results to satisfy a test.</p>
+<h3 id="34-storage-and-disclosure">3.4 Storage and disclosure</h3>
+<p>Private keys and environment files remain under ignored private paths. Raw plans,
+logs, ZIP exports, credentials, codes and cookies may contain sensitive material.
+Do not publish them without review. Public examples use synthetic claims and
+placeholder identifiers only. Reports should include sanitized outcomes rather
+than token contents. Status-list retrieval uses normal JVM TLS validation.</p>
+<h2 id="4-openid-suite-rest-api">4. OpenID suite REST API</h2>
+<p>All paths in this section are relative to the suite API base. The driver expects
+the exact status shown; a different status becomes an API/infrastructure error.
+Response examples show only fields consumed by the harness, not complete schemas.</p>
+<h3 id="41-create-a-test-plan">4.1 Create a test plan</h3>
+<p><strong>POST <code>/api/plan</code> — expected HTTP 201</strong></p>
+<p>Query parameters:</p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>planName</code></td>
+<td>Exact available suite plan name</td>
+</tr>
+<tr>
+<td><code>variant</code></td>
+<td>URL-encoded JSON object, not an opaque variant string</td>
+</tr>
+</tbody>
+</table>
+<p>Headers: <code>Content-Type: application/json</code>, <code>Accept: application/json</code>.
+The JSON body is <strong>the plan's config object alone</strong>. Do not send the enclosing
+<code>planName</code>, <code>variant</code>, <code>config</code> wrapper as the body.</p>
+<pre><code class="language-json">{
+  &quot;alias&quot;: &quot;inji-verify&quot;,
+  &quot;description&quot;: &quot;Inji Verify diagnostic execution&quot;,
+  &quot;client&quot;: {
+    &quot;client_id&quot;: &quot;redirect_uri:https://verify.test:8447/v1/verify/v2/vp-submission/direct-post&quot;
+  },
+  &quot;credential&quot;: {
+    &quot;signing_jwk&quot;: &quot;&lt;actual private test JWK object loaded securely from file&gt;&quot;
+  }
+}
+</code></pre>
+<p>This is an abbreviated schema illustration. The <code>signing_jwk</code> placeholder above
+must be replaced with the actual <strong>object</strong>, not a string, by the renderer; use
+<code>configs/verifier-plan.json.tpl</code> for the complete selected configuration.</p>
+<p>Response subset:</p>
+<pre><code class="language-json">{&quot;id&quot;: &quot;&lt;plan-id&gt;&quot;}
+</code></pre>
+<p>Use case: start an isolated Certify or Verify diagnostic plan. The runner then
+fetches the plan's modules; a created plan without runnable modules is not success.</p>
+<h3 id="42-read-a-plan">4.2 Read a plan</h3>
+<p><strong>GET <code>/api/plan/{planId}</code> — expected HTTP 200</strong></p>
+<p>No body. Response subset:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;&lt;plan-id&gt;&quot;,
+  &quot;modules&quot;: [
+    {&quot;testModule&quot;: &quot;&lt;actual-suite-module-name&gt;&quot;, &quot;variant&quot;: {}}
+  ]
+}
+</code></pre>
+<p>The harness requires a nonempty module list and uses each module's real name and
+variant. A diagnostic <code>--module</code> filter must match an available module exactly.</p>
+<h3 id="43-create-a-module-runner">4.3 Create a module runner</h3>
+<p><strong>POST <code>/api/runner</code> — expected HTTP 201</strong></p>
+<p>Query: <code>test=&lt;module-name&gt;</code>, <code>plan=&lt;plan-id&gt;</code>,
+<code>variant=&lt;URL-encoded module variant JSON&gt;</code>. Send JSON Content-Type even though
+there is no request body. Response subset: <code>{"id":"&lt;test-id&gt;"}</code>.</p>
+<p>Create-from-plan and plan creation are writes. Do not retry after an ambiguous
+lost response: the suite may already have created the object.</p>
+<h3 id="44-start-and-observe-module-execution">4.4 Start and observe module execution</h3>
+<table>
+<thead>
+<tr>
+<th>Method and route</th>
+<th>Purpose</th>
+<th>Expected status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /api/runner/{testId}</code></td>
+<td>Start a configured runner once</td>
+<td>200</td>
+</tr>
+<tr>
+<td><code>GET /api/info/{testId}</code></td>
+<td>Read persisted lifecycle/result state</td>
+<td>200</td>
+</tr>
+<tr>
+<td><code>GET /api/runner/{testId}</code></td>
+<td>Read live browser/exposed interaction state</td>
+<td>200</td>
+</tr>
+<tr>
+<td><code>DELETE /api/runner/{testId}</code></td>
+<td>Cancel an abandoned/timed-out runner</td>
+<td>200</td>
+</tr>
+</tbody>
+</table>
+<p>Persisted state example, with optional result only when relevant:</p>
+<pre><code class="language-json">{&quot;status&quot;:&quot;FINISHED&quot;, &quot;result&quot;:&quot;FAILED&quot;}
+</code></pre>
+<p><code>CONFIGURED</code> triggers one start request. <code>WAITING</code> requires the live runner
+endpoint. <code>FINISHED</code> carries the suite result; <code>INTERRUPTED</code> remains an
+interruption. Persisted info is not a substitute for live handoff data.</p>
+<p>Abbreviated live state, supplied by the actual suite:</p>
+<pre><code class="language-json">{
+  &quot;browser&quot;: {
+    &quot;uriInputRequests&quot;: [{&quot;submitUrl&quot;:&quot;&lt;suite-provided interaction URL&gt;&quot;}],
+    &quot;uploadsRequired&quot;: 1
+  },
+  &quot;exposed&quot;: {
+    &quot;credential_offer_endpoint&quot;: &quot;&lt;suite-provided offer interaction URL&gt;&quot;
+  }
+}
+</code></pre>
+<p>Fields vary by module and state. Do not construct callback URLs from this
+illustration. The runner reads them from the live response. Some interaction GETs
+change state and are explicitly not retried after a lost response.</p>
+<h3 id="45-logs-and-plan-export">4.5 Logs and plan export</h3>
+<p><strong>GET <code>/api/log/{testId}</code> — expected HTTP 200</strong>, JSON log data.</p>
+<p><strong>GET <code>/api/plan/export/{planId}</code> — expected HTTP 200</strong>, with
+<code>Accept: application/zip</code>. The driver verifies that the response is a nonempty,
+valid ZIP before saving it. An HTTP-200 HTML page is not an acceptable export.</p>
+<p>Logs are saved per plan and original test ID. They can contain sensitive test
+configuration. Evidence retrieval failure remains infrastructure failure even
+when some protocol modules completed.</p>
+<h2 id="5-certify-apis-and-offer-handoff">5. Certify APIs and offer handoff</h2>
+<h3 id="51-health-and-discovery">5.1 Health and discovery</h3>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /v1/certify/actuator/health</code></td>
+<td>Health JSON; require <code>status=UP</code>, not merely HTTP 200</td>
+</tr>
+<tr>
+<td><code>GET /.well-known/openid-credential-issuer</code> at public issuer origin</td>
+<td>Actual issuer metadata through gateway mapping</td>
+</tr>
+<tr>
+<td><code>GET /.well-known/oauth-authorization-server</code> at public issuer origin</td>
+<td>Actual native AS metadata through gateway mapping</td>
+</tr>
+</tbody>
+</table>
+<p>The reviewed unsigned-metadata patch returns unsigned JSON when signed metadata
+is unavailable, preserving actual metadata values. A signed-metadata test can be
+SKIPPED; that is not a protocol pass. The native metadata exposes
+<code>interactive_authorization_endpoint</code>; no conventional <code>authorization_endpoint</code>
+has been fabricated or renamed.</p>
+<h3 id="52-create-pre-authorized-credential-data">5.2 Create pre-authorized credential data</h3>
+<p><strong>POST <code>/v1/certify/pre-authorized-data</code> — expected HTTP 200</strong>, JSON.</p>
+<table>
+<thead>
+<tr>
+<th>Request field</th>
+<th>Type and constraint</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>credential_configuration_id</code></td>
+<td>Required nonblank identifier registered in Certify</td>
+</tr>
+<tr>
+<td><code>claims</code></td>
+<td>Required object; identity values must match the selected template/plugin</td>
+</tr>
+<tr>
+<td><code>expires_in</code></td>
+<td>Optional integer, 60 to 86,400 seconds; harness sends 600</td>
+</tr>
+<tr>
+<td><code>tx_code</code></td>
+<td>Optional 4–8 alphanumeric characters; use the actual intended transaction code</td>
+</tr>
+</tbody>
+</table>
+<p>Illustrative synthetic request:</p>
+<pre><code class="language-json">{
+  &quot;credential_configuration_id&quot;: &quot;HarnessSdJwtCredential&quot;,
+  &quot;claims&quot;: {&quot;fullName&quot;: &quot;Synthetic Test Holder&quot;},
+  &quot;expires_in&quot;: 600
+}
+</code></pre>
+<p>Response subset:</p>
+<pre><code class="language-json">{&quot;credential_offer_uri&quot;:&quot;&lt;actual returned credential offer URI&gt;&quot;}
+</code></pre>
+<p>The returned URI can wrap a <code>credential_offer_uri</code> query parameter. The handoff
+extracts the actual offer-data URI, requires HTTPS, and passes it to the suite's
+live <code>credential_offer_endpoint</code>. It does not create a fake offer response.</p>
+<h3 id="53-retrieve-an-offer">5.3 Retrieve an offer</h3>
+<p><strong>GET <code>/v1/certify/credential-offer-data/{offerId}</code> — JSON</strong>.
+Use the exact service-provided URI rather than assembling an offer ID yourself.
+The response contains the issuer, selected credential configuration and actual
+grant information. Codes are single-use sensitive values and are omitted here.</p>
+<h3 id="54-native-token-exchange">5.4 Native token exchange</h3>
+<p><strong>POST <code>/v1/certify/oauth/token</code> — form URL-encoded request; JSON response</strong>.
+For native pre-authorization, the inspected controller reads:</p>
+<pre><code class="language-text">grant_type=urn:ietf:params:oauth:grant-type:pre-authorized_code
+pre-authorized_code=&lt;actual unconsumed code&gt;
+tx_code=&lt;actual transaction code, when required&gt;
+</code></pre>
+<p>Response fields include <code>access_token</code>, <code>token_type</code> and expiry information.
+The retained native smoke flow returned a Bearer token. Tokens are not reproduced
+in this document. This smoke flow is not an issuer conformance pass.</p>
+<p>The same native controller has an authorization-code branch for the native IAR
+flow; this does not establish conventional external-AS browser authorization,
+private_key_jwt client validation, or DPoP support. An external AS has its own
+code store. Pointing this request at Keycloak or eSignet cannot transfer native
+Certify codes automatically.</p>
+<h3 id="55-credential-issuance-boundary">5.5 Credential issuance boundary</h3>
+<p>The credential endpoint is read from the <strong>actual issuer metadata</strong>, rather than
+invented by the handoff. The retained configuration routes issuance under
+<code>/v1/certify/issuance/credential</code>. The suite drives the selected issuance protocol
+after discovery and offer handling. Its payload requires real access authorization
+and signed holder proof; placeholders are not valid requests.</p>
+<p>Successful complete issuance has not been established in the retained issuer
+conformance runs. Those runs were interrupted before the intended flow completed.
+Use tagged credential DTO/proof validators for the exact release contract rather
+than copying a draft-era proof body into the final-profile plan.</p>
+<h2 id="6-verify-apis-and-dcql-presentation-flow">6. Verify APIs and DCQL presentation flow</h2>
+<h3 id="61-create-a-backend-vp-request">6.1 Create a backend VP request</h3>
+<p><strong>POST <code>/v1/verify/v2/vp-request</code> — expected HTTP 201</strong>, JSON.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Harness-selected contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clientId</code></td>
+<td>Exact <code>redirect_uri:</code> prefix plus public direct-post URL</td>
+</tr>
+<tr>
+<td><code>transactionId</code></td>
+<td>Optional actual transaction correlation value</td>
+</tr>
+<tr>
+<td><code>nonce</code></td>
+<td>Optional; if supplied, at least 16 URL-safe ASCII characters</td>
+</tr>
+<tr>
+<td><code>dcqlQuery</code></td>
+<td>Required nonempty credential query</td>
+</tr>
+<tr>
+<td><code>responseCodeValidationRequired</code></td>
+<td>Must be false for this cross-device REST handoff</td>
+</tr>
+</tbody>
+</table>
+<p>Illustrative request:</p>
+<pre><code class="language-json">{
+  &quot;clientId&quot;: &quot;redirect_uri:https://verify.test:8447/v1/verify/v2/vp-submission/direct-post&quot;,
+  &quot;dcqlQuery&quot;: {
+    &quot;credentials&quot;: [{
+      &quot;id&quot;: &quot;pid&quot;,
+      &quot;format&quot;: &quot;dc+sd-jwt&quot;,
+      &quot;meta&quot;: {&quot;vct_values&quot;: [&quot;urn:eudi:pid:1&quot;]},
+      &quot;require_cryptographic_holder_binding&quot;: true
+    }]
+  },
+  &quot;responseCodeValidationRequired&quot;: false
+}
+</code></pre>
+<p>The harness rejects legacy <code>presentationDefinition</code> and unsupported top-level
+fields. Query IDs must be unique and nonempty. Selected format must be
+<code>dc+sd-jwt</code> or <code>vc+sd-jwt</code>, with nonempty <code>vct_values</code> and holder binding required.
+Native DCQL validation remains authoritative for the full query.</p>
+<p>Abbreviated response shape:</p>
+<pre><code class="language-json">{
+  &quot;requestId&quot;: &quot;&lt;request-id&gt;&quot;,
+  &quot;transactionId&quot;: &quot;&lt;transaction-id&gt;&quot;,
+  &quot;authorizationDetails&quot;: {
+    &quot;clientId&quot;: &quot;&lt;actual requested client ID&gt;&quot;,
+    &quot;responseType&quot;: &quot;vp_token&quot;,
+    &quot;responseMode&quot;: &quot;direct_post&quot;,
+    &quot;responseUri&quot;: &quot;https://verify.test:8447/v1/verify/v2/vp-submission/direct-post&quot;,
+    &quot;nonce&quot;: &quot;&lt;service-generated nonce&gt;&quot;,
+    &quot;dcqlQuery&quot;: {&quot;credentials&quot;: [&quot;&lt;actual query objects&gt;&quot;]},
+    &quot;clientMetadata&quot;: {
+      &quot;vp_formats_supported&quot;: {
+        &quot;dc+sd-jwt&quot;: {
+          &quot;sd-jwt_alg_values&quot;: [&quot;ES256&quot;],
+          &quot;kb-jwt_alg_values&quot;: [&quot;ES256&quot;]
+        }
+      }
+    }
+  }
+}
+</code></pre>
+<p>Placeholder strings in query arrays above abbreviate objects; they are not a
+valid replay payload. <code>clientMetadata</code> is published by the <strong>reviewed derived
+native service</strong>, not injected by Python. The original upstream DTO omitted it.
+The selected unsigned URL-query profile must not unexpectedly return a signed
+<code>requestUri</code>; the handoff fails if it does.</p>
+<h3 id="62-relay-actual-authorization-details-to-the-suite">6.2 Relay actual authorization details to the suite</h3>
+<p>The harness sends a <strong>GET to the suite-provided <code>submitUrl</code></strong>, with query fields:</p>
+<table>
+<thead>
+<tr>
+<th>Native response field</th>
+<th>OID4VP parameter</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clientId</code></td>
+<td><code>client_id</code></td>
+</tr>
+<tr>
+<td><code>responseType</code></td>
+<td><code>response_type</code></td>
+</tr>
+<tr>
+<td><code>responseMode</code></td>
+<td><code>response_mode</code></td>
+</tr>
+<tr>
+<td><code>responseUri</code></td>
+<td><code>response_uri</code></td>
+</tr>
+<tr>
+<td><code>nonce</code></td>
+<td><code>nonce</code></td>
+</tr>
+<tr>
+<td><code>dcqlQuery</code></td>
+<td>JSON-encoded <code>dcql_query</code></td>
+</tr>
+<tr>
+<td>Native <code>clientMetadata</code>, if present</td>
+<td>JSON-encoded <code>client_metadata</code></td>
+</tr>
+<tr>
+<td>Actual <code>requestId</code></td>
+<td><code>state</code></td>
+</tr>
+</tbody>
+</table>
+<p>This is a suite interaction URL, not a new Verify endpoint. The handoff verifies
+the actual client ID, response binding and query before submitting. It does not
+invent metadata or alter cryptographic material.</p>
+<h3 id="63-submit-a-presentation">6.3 Submit a presentation</h3>
+<p><strong>POST <code>/v1/verify/v2/vp-submission/direct-post</code></strong>, form URL-encoded.
+The suite acts as the presenting wallet in this flow.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>state</code></td>
+<td>Required actual request ID from the authorization request</td>
+</tr>
+<tr>
+<td><code>vp_token</code></td>
+<td>Actual serialized DCQL VP-token JSON containing signed presentations</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>Alternative wallet error response, when applicable</td>
+</tr>
+<tr>
+<td><code>error_description</code></td>
+<td>Optional accompanying error description</td>
+</tr>
+</tbody>
+</table>
+<p>The selected success path requires a real VP token; missing or invalid submission
+parameters can be rejected. A 2xx response can mean the presentation was accepted
+for subsequent verification; it <strong>does not prove the credentials passed</strong>.
+Negative tests can legitimately receive 4xx before a VP is stored. Do not replace
+this call with a JSON file that claims success.</p>
+<h3 id="64-poll-request-state">6.4 Poll request state</h3>
+<p><strong>GET <code>/v1/verify/vp-request/{requestId}/status</code> — expected HTTP 200</strong>.
+Note that this route has <strong>no <code>v2</code> segment</strong>. Native state values consumed by the
+handoff are <code>ACTIVE</code>, <code>EXPIRED</code> and <code>VP_SUBMITTED</code>.</p>
+<pre><code class="language-json">{&quot;status&quot;:&quot;VP_SUBMITTED&quot;}
+</code></pre>
+<p>The native route can defer its response while waiting. An expired request is a
+real handoff failure. An unknown/invalid status is not interpreted as success.</p>
+<h3 id="65-retrieve-and-verify-results">6.5 Retrieve and verify results</h3>
+<p><strong>POST <code>/v1/verify/v2/vp-results/{transactionId}</code> — expected HTTP 200</strong>, JSON.</p>
+<p>Actual harness request:</p>
+<pre><code class="language-json">{
+  &quot;skipStatusChecks&quot;: false,
+  &quot;statusCheckFilters&quot;: [],
+  &quot;includeClaims&quot;: false
+}
+</code></pre>
+<p>Response schema subset:</p>
+<pre><code class="language-json">{
+  &quot;transactionId&quot;: &quot;&lt;actual transaction-id&gt;&quot;,
+  &quot;allChecksSuccessful&quot;: false,
+  &quot;credentialResults&quot;: [&quot;&lt;actual native credential result objects&gt;&quot;]
+}
+</code></pre>
+<p>The harness requires the same transaction ID, a boolean overall outcome, and a
+nonempty list of actual result objects. Inspect native credential-result DTOs for
+their full per-check fields. The placeholder array is not a replay response.
+Unknown transaction IDs return 404 in the tagged controller. The actual result
+is saved as <code>&lt;test-id&gt;-verify-result.json</code> beside suite evidence.</p>
+<p>A positive suite module fails if Verify rejects the presentation. A negative
+module is not made positive by changing native verification output. Backend
+success alone does not satisfy a pending screenshot requirement.</p>
+<h3 id="66-browser-session-apis-and-unfinished-ui-integration">6.6 Browser-session APIs and unfinished UI integration</h3>
+<p>The tagged service also provides <code>POST /v1/verify/v2/vp-session-request</code>, returning
+HTTP 201 with real session-cookie management. Its UI SDK owns the create/poll/result
+lifecycle and uses corresponding session result APIs. This differs from the
+backend-owned REST request above.</p>
+<p>The current harness does not yet implement genuine UI-owned transaction capture
+and screenshot upload tied to every affected suite test. Browser cookies cannot
+be replaced by an arbitrary backend request ID. The suite's screenshot/review
+requirement must be satisfied with the actual corresponding frontend result;
+JSON screenshots or a harness dashboard are not verifier UI evidence.</p>
+<h3 id="67-standalone-native-credential-verification-and-status-resolution">6.7 Standalone native credential verification and status resolution</h3>
+<p>The retained investigation also called the native
+<code>POST /v1/verify/v2/vc-verification</code> path to examine an actual signed credential
+after its status-list provider became unavailable. This is diagnostic evidence,
+not a replacement for the complete VP test plan. Supply the real signed credential
+using the selected release DTO and keep status checks enabled.</p>
+<p>For the reviewed same-issuer-key JWT status-list profile:</p>
+<ul>
+<li>Valid credential/status: native status check succeeds.</li>
+<li>Revoked status: overall verification is false with <code>CREDENTIAL_REVOKED</code>.</li>
+<li>Unavailable status source: overall false with <code>STATUS_UNAVAILABLE</code>, even when
+  the credential signature remains valid.</li>
+<li>Absence of optional credential status is not automatically an invalid credential.</li>
+</ul>
+<p>The native checker fetches HTTPS <code>application/statuslist+jwt</code>, validates signature
+and freshness, decodes the referenced index and does not cache responses. Its
+supported profile does not imply support for every delegated signer or status
+format. Status error names are application results, not HTTP status codes.</p>
+<h2 id="7-example-use-cases">7. Example use cases</h2>
+<h3 id="71-evaluate-the-api-contract-without-a-running-stack">7.1 Evaluate the API contract without a running stack</h3>
+<p>From the repository root in Windows PowerShell, using retained dependencies:</p>
+<pre><code class="language-powershell">$env:PYTHONPATH = Join-Path $PWD '.local-deps'
+python -m pytest runner/tests -q
+</code></pre>
+<p>This checks harness behavior, including mocked API-contract regressions and native
+tests when their runtime is available. It does not contact an unavailable service
+and does not establish protocol acceptance. See the README for a fresh install.</p>
+<h3 id="72-trusted-local-health-request">7.2 Trusted local health request</h3>
+<p>Illustrative Bash command, requiring an actual healthy deployment:</p>
+<pre><code class="language-bash">curl --cacert local/tls/ca.crt \
+  -H 'Accept: application/json' \
+  https://localhost:8447/v1/verify/actuator/health
+</code></pre>
+<p>Check the JSON body for <code>status=UP</code>. Do not use <code>-k</code>, publish private keys or
+claim this health check validates the presentation protocol.</p>
+<h3 id="73-create-a-real-verify-request">7.3 Create a real Verify request</h3>
+<p>Write the synthetic request from section 6.1 to a local JSON file, then:</p>
+<pre><code class="language-bash">curl --cacert local/tls/ca.crt \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  --data-binary @local/verify-request.json \
+  https://localhost:8447/v1/verify/v2/vp-request
+</code></pre>
+<p>Expect 201 only if the actual service validates and creates the request. Retain
+the actual correlation IDs privately; then let the suite submit its signed
+presentation and query the result. These commands were not executed for this PDF.</p>
+<h3 id="74-run-full-diagnostic-workflows">7.4 Run full diagnostic workflows</h3>
+<p>After the proper stack and trust configuration are healthy, use Git Bash:</p>
+<pre><code class="language-bash">bash run-full-stack-conformance.sh --component certify --no-up
+bash run-full-stack-conformance.sh --component verify --no-up
+bash run-full-stack-conformance.sh --combined --no-up
+</code></pre>
+<p>Each wrapper uses the suite REST API and component handoffs described above.
+Do not treat a short diagnostic subset as a full plan. Use the existing project's
+Compose files/environment rather than accidentally creating a competing stack.</p>
+<h3 id="75-retrieve-results-using-the-python-http-contract">7.5 Retrieve results using the Python HTTP contract</h3>
+<p>Illustrative trusted request; retrieve identifiers from an actual transaction:</p>
+<pre><code class="language-python">import requests
+
+transaction_id = &quot;&lt;actual transaction id&gt;&quot;
+response = requests.post(
+    &quot;https://localhost:8447/v1/verify/v2/vp-results/&quot; + transaction_id,
+    json={&quot;skipStatusChecks&quot;: False,
+          &quot;statusCheckFilters&quot;: [], &quot;includeClaims&quot;: False},
+    verify=&quot;local/tls/ca.crt&quot;,
+    allow_redirects=False,
+    timeout=30,
+)
+response.raise_for_status()
+result = response.json()
+# Evaluate the actual boolean and credential checks; do not print sensitive claims.
+</code></pre>
+<p>Use URL-safe/encoded actual IDs in real callers. Do not retry ambiguous writes
+merely because the response was lost. The harness's own client applies additional
+deadlines and response-shape checks.</p>
+<h2 id="8-timeouts-retries-and-error-handling">8. Timeouts, retries and error handling</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Harness behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read connection failure or timeout</td>
+<td>Up to three attempts, within the actual deadline</td>
+</tr>
+<tr>
+<td>Ambiguous lost response to a write</td>
+<td>Fail; no automatic replay of a possibly completed write</td>
+</tr>
+<tr>
+<td>State-changing suite callback GET</td>
+<td>Retry disabled despite GET method</td>
+</tr>
+<tr>
+<td>Unexpected HTTP status</td>
+<td>Sanitized API error; do not echo secret-bearing response body</td>
+</tr>
+<tr>
+<td>Invalid JSON/shape</td>
+<td>Infrastructure error, not a skipped module</td>
+</tr>
+<tr>
+<td>Invalid/empty ZIP export</td>
+<td>Evidence failure and infrastructure exit</td>
+</tr>
+<tr>
+<td>Module/global timeout</td>
+<td>Preserve partial results; cancel abandoned runner where possible</td>
+</tr>
+<tr>
+<td>Screenshot WAITING timeout</td>
+<td>FAILED, even when backend verification succeeded</td>
+</tr>
+<tr>
+<td>Wrong configured suite origin</td>
+<td>Refuse request to prevent credential/TLS setting leakage</td>
+</tr>
+</tbody>
+</table>
+<p>HTTP requests have a 30-second cap within module/global budgets. Native status
+resolution has its own bounded network and payload policies. The wrapper's
+startup/health budgets are separate from protocol/API execution time.</p>
+<p>Typical error categories, without claiming every upstream body is identical:</p>
+<ul>
+<li>400: invalid query/body/DCQL/submission or OAuth parameters, depending on service.</li>
+<li>401/403: authentication, authorization or CSRF policy failure, depending on route.</li>
+<li>404: unknown plan/request/transaction or unavailable route.</li>
+<li>5xx: service/runtime failure; inspect redacted service diagnostics.</li>
+<li>TLS/connection failure: missing CA, hostname mismatch, unavailable gateway or engine.</li>
+</ul>
+<p>Always inspect the selected native controller/error DTO privately for exact
+response codes and fields. Do not normalize all failures into a synthetic success.</p>
+<h2 id="9-local-output-contract-and-build-exits">9. Local output contract and build exits</h2>
+<p>The following is a <strong>local result file</strong>, not an HTTP endpoint:</p>
+<pre><code class="language-json">{
+  &quot;component&quot;: &quot;verify&quot;,
+  &quot;runId&quot;: &quot;&lt;unique-run-id&gt;&quot;,
+  &quot;planId&quot;: &quot;&lt;actual-plan-id&gt;&quot;,
+  &quot;modules&quot;: [{
+    &quot;name&quot;: &quot;&lt;actual-module-name&gt;&quot;,
+    &quot;testId&quot;: &quot;&lt;actual-test-id&gt;&quot;,
+    &quot;variant&quot;: {},
+    &quot;status&quot;: &quot;FAILED&quot;,
+    &quot;detail&quot;: &quot;&lt;sanitized actual reason&gt;&quot;,
+    &quot;logUrl&quot;: &quot;&lt;actual suite log URL&gt;&quot;,
+    &quot;duration&quot;: 1.0
+  }],
+  &quot;summary&quot;: {&quot;passed&quot;: 0, &quot;failed&quot;: 1},
+  &quot;errors&quot;: [],
+  &quot;exitCode&quot;: 1
+}
+</code></pre>
+<p>This abbreviated illustrative example is not a retained test result. Full files
+also carry timestamps, duration, selected module information, benchmark evaluation
+and evidence paths. Actual counts must come from the relevant invocation.</p>
+<table>
+<thead>
+<tr>
+<th>Exit</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>No unexpected failure gate; does not make REVIEW/SKIPPED/WARNING into passes</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Protocol FAILED/INTERRUPTED or configured execution-budget breach</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Invalid configuration, unavailable API or infrastructure/evidence failure</td>
+</tr>
+</tbody>
+</table>
+<p>Statuses include PASSED, FAILED, INTERRUPTED, WARNING, SKIPPED, REVIEW,
+EXPECTED_FAILURE and EXPECTED_SKIP. Unknown results fail. Infrastructure failures
+cannot be allowlisted. Java adapters preserve failing process/result states and
+add an independent evaluated benchmark row when applicable.</p>
+<p><code>configs/benchmark-thresholds.json</code> uses null defaults. Null means
+<code>NOT_CONFIGURED</code>, not performance PASSED. Configured thresholds use inclusive
+boundaries: measured seconds equal to the limit pass, greater values fail.
+Combined execution sums sequential component execution time and preserves failed
+component gates. No arbitrary production threshold is invented.</p>
+<p>Evidence locations:</p>
+<ul>
+<li><code>results/results-certify.json</code>, <code>results/results-verify.json</code> and component Markdown.</li>
+<li><code>results/results-combined.json</code> and <code>results/report-combined.md</code>.</li>
+<li><code>results/&lt;component&gt;-evidence/&lt;plan-id&gt;/</code>, containing logs, exports and native results.</li>
+<li>Standalone TestNG/Extent output under the configured Maven report directory.</li>
+<li><code>artifacts/demo/final-submission-readiness.md</code> for latest assessment and current checks.</li>
+</ul>
+<h2 id="10-known-limitations-and-current-evidence">10. Known limitations and current evidence</h2>
+<p>The fresh 2026-11-02 regression assessment recorded <strong>90 passed, 0 failures,
+0 errors and 0 skips</strong>, with one Python deprecation warning. Static Compose
+validation and Java adapter compilation passed. Docker's Linux engine was
+unavailable, so no fresh service/API/conformance run is implied by this PDF.</p>
+<p>Retained 2026-10-31 results, explicitly historical:</p>
+<table>
+<thead>
+<tr>
+<th>Workflow</th>
+<th style="text-align: right;">Passed</th>
+<th style="text-align: right;">Failed</th>
+<th style="text-align: right;">Interrupted</th>
+<th style="text-align: right;">Warning</th>
+<th style="text-align: right;">Skipped</th>
+<th style="text-align: right;">Exit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Certify</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">12</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr>
+<td>Verify</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr>
+<td>Combined</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">12</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+</tr>
+</tbody>
+</table>
+<p>Remaining blockers are real external-AS/client/grant integration, Certify DPoP
+resource validation and genuine Verify UI evidence/review. Published native
+metadata does not by itself resolve authorization compatibility. Keycloak and
+eSignet are assessed candidates, not deployed integrations.</p>
+<p>The upstream suite's protocol HTTP client has its own permissive TLS behavior.
+Its protocol result does not prove TLS trust; independent normal-JDK/Python checks
+are separate evidence. See <code>docs/tls-validation.md</code>.</p>
+<h2 id="11-source-and-documentation-index">11. Source and documentation index</h2>
+<p>Consult these repository files when evaluating or changing the contract:</p>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Source / reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Complete setup and workflow commands</td>
+<td><code>README.md</code></td>
+</tr>
+<tr>
+<td>Suite API implementation</td>
+<td><code>runner/conformance_runner.py</code> and its regression tests</td>
+</tr>
+<tr>
+<td>Component API handoffs</td>
+<td><code>runner/handoff_certify.py</code>, <code>runner/handoff_verify.py</code></td>
+</tr>
+<tr>
+<td>API client security/retry behavior</td>
+<td><code>runner/common.py</code>, <code>SuiteAPI</code> in the runner</td>
+</tr>
+<tr>
+<td>Certify native routes</td>
+<td>Tagged <code>PreAuthorizedCodeController</code>, <code>OAuthController</code>, <code>WellKnownController</code></td>
+</tr>
+<tr>
+<td>Certify request DTO</td>
+<td>Tagged <code>certify-core/.../PreAuthorizedRequest.java</code></td>
+</tr>
+<tr>
+<td>Verify native routes</td>
+<td>Tagged <code>VPRequestController</code>, <code>VPSubmissionController</code>, <code>VPResultController</code></td>
+</tr>
+<tr>
+<td>Verify DTOs</td>
+<td>Tagged <code>VPRequestCreateDto</code>, <code>VPVerificationResultDto</code>, <code>VerificationRequestDto</code></td>
+</tr>
+<tr>
+<td>Derived native changes</td>
+<td><code>patches/</code>, <code>tools/verify-fixes/</code>, <code>tools/prepare_native_images.py</code></td>
+</tr>
+<tr>
+<td>Actual handoff findings</td>
+<td><code>docs/component-handoff.md</code>, <code>docs/blocker-resolution.md</code></td>
+</tr>
+<tr>
+<td>External-AS prerequisites</td>
+<td><code>docs/external-as-assessment.md</code></td>
+</tr>
+<tr>
+<td>Execution-time policies</td>
+<td><code>docs/benchmark-thresholds.md</code></td>
+</tr>
+<tr>
+<td>Troubleshooting and TLS</td>
+<td><code>docs/troubleshooting.md</code>, <code>docs/tls-validation.md</code></td>
+</tr>
+<tr>
+<td>Historical full validation</td>
+<td><code>artifacts/demo/final-validation-report.md</code></td>
+</tr>
+</tbody>
+</table>
+<p>Documentation examples omit secrets and intentionally do not provide fake signed
+credentials, fake discovery metadata or a fictitious successful external-AS flow.
+Use actual service responses and approved test identities when the deployment
+is available.</p><div class="notice">Generated from docs/api-reference.md. Examples contain no real credentials. This document is not an end-to-end conformance certificate.</div></body></html>

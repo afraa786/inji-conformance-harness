@@ -7,6 +7,9 @@ The video labels retained execution evidence separately from current checks.
 Pitch presentation content is in [docs/submission-pitch.md](docs/submission-pitch.md);
 a rendered pitch deck still requires preparation.
 
+API documentation: [detailed reference](docs/api-reference.md) and
+[downloadable PDF](<artifacts/documentation/Inji Conformance Harness - API Documentation.pdf>).
+
 For Windows with the retained dependencies, use PowerShell from the repository root:
 
 ```powershell
@@ -48,16 +51,128 @@ Bash. Both local Inji api-test POMs require Java 21. Local execution used Java
 21.0.5, Maven 3.9.9, Docker Engine 27.5.1 and Compose 2.32.4. The available local
 Python was 3.8.10; tests ran, but cryptography warns that its support is deprecated.
 
-From the repository root:
+Follow these steps to install and evaluate the project independently. Commands
+in this section use **Windows PowerShell**, unless marked Git Bash. A fresh
+installation requires internet access to fetch dependencies, tagged source files
+and container images. Existing users should retain their configuration and
+installed dependencies.
 
-```bash
-docker compose config --quiet
-# Copy only when .env does not already exist; retain your private settings.
-cp .env.example .env
-python -m pip install -r requirements.txt
-python runner/prepare_local.py
-python -m pytest runner/tests -q --basetemp=local/pytest-tmp --junitxml=results/unit-tests.xml
-```
+1. **Open the repository and check prerequisites.** On a new machine, clone the
+   repository; if it already exists, open its root instead of cloning over it.
+
+   ```powershell
+   git clone https://github.com/afraa786/inji-conformance-harness.git
+   Set-Location inji-conformance-harness
+   python --version
+   java -version
+   mvn -version
+   docker compose version
+   ```
+
+   Install Python 3.10+, JDK 21, Maven, Git for Windows (including Git Bash), and
+   Docker Desktop with its Linux engine if these prerequisites are absent.
+
+2. **Prepare Python dependencies and private configuration.** For a fresh checkout:
+
+   ```powershell
+   python -m venv .venv
+   & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   $env:PYTHON = (Resolve-Path .\.venv\Scripts\python.exe).Path
+   if (-not (Test-Path -LiteralPath .env)) {
+       Copy-Item -LiteralPath .env.example -Destination .env
+   }
+   ```
+
+   For this existing workspace, use the retained dependencies instead of
+   reinstalling them:
+
+   ```powershell
+   $env:PYTHON = (Get-Command python).Source
+   $env:PYTHONPATH = Join-Path $PWD '.local-deps'
+   ```
+
+   Review `.env` locally. It contains development settings, not provisioned AS
+   clients. Keep private keys, passwords and tokens out of source control and
+   shared output. An existing `.env` is not overwritten; review its suite image
+   pins against `.env.example`, because older pins may no longer be pullable.
+
+3. **Generate local fixtures and validate the harness.** On a fresh setup:
+
+   ```powershell
+   & $env:PYTHON runner/prepare_local.py
+   ```
+
+   Preparation refreshes generated configuration and SQL, so existing users
+   should review their local customizations before rerunning it. Then run:
+
+   ```powershell
+   & $env:PYTHON -m pytest runner/tests -q --junitxml=results/unit-tests.xml
+   docker compose config --quiet
+   ```
+
+   A fresh checkout without the extracted native Verify runtime can skip the
+   native Java status tests. After building the native fixes in step 5, rerun
+   the regression command and inspect the exact pass/fail/skip counts. The latest
+   recorded local run had 90 passes and no skips; this is not a guaranteed result
+   on a new machine or proof of protocol conformance.
+
+4. **Check the Docker Linux engine before starting services.** Open Docker
+   Desktop and wait for the Linux engine, then run:
+
+   ```powershell
+   $env:DOCKER_CONTEXT = 'desktop-linux'
+   docker --context desktop-linux info --format '{{.ServerVersion}}'
+   docker --context desktop-linux ps
+   ```
+
+   Require a nonempty server version and a successful service query. The Windows
+   CLI has returned exit 0 with a connection error and no version; exit 0 alone
+   is insufficient. If the engine is unavailable, stop live setup here. You can
+   still run harness tests and inspect the [video](<artifacts/demo/Final Submission Video.mp4>),
+   [readiness report](artifacts/demo/final-submission-readiness.md) and
+   [retained validation report](artifacts/demo/final-validation-report.md).
+
+5. **Build the reviewed native fixes and start the diagnostic stack.** For a
+   fresh build, with Docker operational:
+
+   ```powershell
+   & $env:PYTHON tools/prepare_native_images.py
+   $env:COMPOSE_PATH_SEPARATOR = ';'
+   $env:COMPOSE_FILE = 'docker-compose.yml;docker-compose.native-fixes.yml'
+   docker compose config --quiet
+   docker compose up -d --wait --wait-timeout 600 postgres mongodb server httpd certify verify
+   docker compose ps
+   ```
+
+   The builder checks exact source/base hashes and builds explicitly derived
+   Certify and Verify images. Existing build outputs are protected; if it refuses
+   an existing output, preserve it and use the verified existing images or a
+   separate checkout. Do not delete local dependencies or reset source to retry.
+   Keep these environment variables in the same PowerShell session for step 6.
+   For an existing deployment, use its original Compose project and overrides;
+   do not start a competing stack on occupied ports or share live database volumes.
+
+6. **Run Certify, Verify and combined workflows using Git Bash.** From the same
+   PowerShell session, invoke Git for Windows' Bash (adjust its path if needed):
+
+   ```powershell
+   $gitBash = Join-Path $env:ProgramFiles 'Git\bin\bash.exe'
+   & $gitBash run-full-stack-conformance.sh --component certify --no-up
+   & $gitBash run-full-stack-conformance.sh --component verify --no-up
+   & $gitBash run-full-stack-conformance.sh --combined --no-up
+   ```
+
+   Inspect `$LASTEXITCODE` immediately after each command. Read
+   `results/report-certify.md`, `results/report-verify.md` and
+   `results/report-combined.md`, plus their JSON/evidence files. For the Java
+   adapters and generated TestNG/Extent reports, follow
+   [Java 21 subprocess bridge](#java-21-subprocess-bridge) below. The underlying
+   API calls and endpoint contract are documented in [API automation](docs/api-automation.md).
+
+   These are diagnostic workflows: unresolved authorization and frontend-evidence
+   requirements can produce failures or interruptions. No external AS or registered
+   clients are installed by these steps. See [external-AS prerequisites](docs/external-as-assessment.md)
+   and [troubleshooting](docs/troubleshooting.md) before interpreting results.
 
 Preparation fetches only named files from upstream tag `v1.0.0-alpha.1`, generates
 private development keys, a local CA/SAN certificate, Java truststore, synthetic
@@ -203,8 +318,10 @@ generates ephemeral development fixtures, retains nonzero exits, uploads reports
 and diagnostics even after failure, and posts Markdown to the job summary.
 The latest inspected remote run, 40281698859, passed its unit job but failed
 conformance startup because the registry did not serve the pinned suite manifest.
-The final local validation used the retained cached image; no new remote run was
-triggered for these uncommitted changes. Actual conformance failures also remain.
+The later 2026-10-31 local validation pulled and deployed immutable suite release
+v5.3.4 with the reviewed native fixes; no new remote run validated those changes.
+The 2026-11-02 assessment could not rerun live workflows because the Docker Linux
+engine was unavailable. Actual conformance failures remain.
 
 Optional MinIO upload uses `runner/upload_results.py` and
 `requirements-upload.txt`, bucket `automationtests`, with all three

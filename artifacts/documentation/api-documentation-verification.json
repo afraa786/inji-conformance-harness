@@ -1,0 +1,16 @@
+{
+  "pdf": "artifacts/documentation/Inji Conformance Harness - API Documentation.pdf",
+  "bytes": 195079,
+  "pages": 21,
+  "sha256": "c0d5009642790a9ecf6d62a357dd336647f863783b5e6fc6f1937521250400ba",
+  "source": "docs/api-reference.md",
+  "sourceSha256": "ce92736184f2b90c7d9bcab0d254b4ca282e3180c0f9f0cffbbc76b4712f99f0",
+  "validation": "Chromium PDF export, valid PDF header/EOF, page objects counted, source layout checks; no API execution",
+  "layout": {
+    "title": "Inji Conformance Harness \u2014 API Documentation",
+    "chapters": 11,
+    "tables": 14,
+    "codeBlocks": 19,
+    "overflow": 0
+  }
+}

@@ -1,5 +1,9 @@
 # Python REST driver
 
+For endpoint descriptions, request/response formats, authentication, errors and
+example use cases, see the [detailed API reference](api-reference.md). The printable
+PDF is [Inji Conformance Harness — API Documentation](<../artifacts/documentation/Inji Conformance Harness - API Documentation.pdf>).
+
 `runner/conformance_runner.py` follows the API contract in the read-only suite's
 `scripts/conformance.py` and the orchestration in `scripts/run-test-plan.py`.
 The Java bridge invokes this driver as a subprocess. There is no Java REST port.
